@@ -1,6 +1,7 @@
 import os
 import random
-import resend
+import smtplib
+from email.message import EmailMessage
 from flask import Flask, request, jsonify, make_response
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -11,8 +12,9 @@ CORS(app, origins=["https://hamzaahmedcollab.github.io"], supports_credentials=T
 
 # Core Environment Initializations
 DB_URL = os.environ.get('DATABASE_URL')
-resend.api_key = os.environ.get("RESEND_API_KEY")
 db = PostgresqlDatabase(DB_URL)
+
+SMTP_FROM = "adam.afify13@gmail.com"
 
 # Database Table Layout
 class User(Model):
@@ -43,6 +45,23 @@ def _db_close(response):
 # Numeric unique token algorithm 
 def genCode():
     return "".join([str(random.randint(0, 9)) for i in range(4)])
+
+def send_email(to, code):
+    msg = EmailMessage()
+    msg["From"] = SMTP_FROM
+    msg["To"] = to
+    msg["Subject"] = "Verify your email"
+    msg.set_content(f"Your verification code is: {code}")
+    msg.add_alternative(email_html_body.format(secret_pin=code), subtype="html")
+    port = int(os.environ.get("SMTP_PORT", 587))
+    if port == 465:
+        s = smtplib.SMTP_SSL("smtp-relay.brevo.com", port)
+    else:
+        s = smtplib.SMTP("smtp-relay.brevo.com", port)
+        s.starttls()
+    with s:
+        s.login(os.environ.get("SMTP_LOGIN"), os.environ.get("SMTP_PASSWORD"))
+        s.send_message(msg)
 
 # Endpoint 1: Registration and Token Mailer Outbound
 @app.route("/api/signup", methods=["POST"])
@@ -167,12 +186,7 @@ def handleSignUp():
         code = genCode()
         newUser = User.create(username=email, password_hash=hashed_password, verified=False, verification_code=code)
         
-        resend.Emails.send({
-            "from": "onboarding@resend.dev",
-            "to": email,
-            "subject": "Verify your email",
-            "html": email_html_body.format(secret_pin=code)
-        })
+        send_email(email, code)
          
         return {"status": "success", "message": "User created successfully. Verify email to get access."}, 200
     except IntegrityError:
@@ -200,6 +214,30 @@ def handleVerification():
             return {"status": "success", "message": "Account verified successfully! You can now log in."}, 200
         else:
             return {"status": "error", "message": "Invalid verification code."}, 400
+    except User.DoesNotExist:
+        return {"status": "error", "message": "User not found."}, 404
+
+# Endpoint 2.5: Resend verification code
+@app.route("/api/resend-code", methods=["POST"])
+def handleResendCode():
+    data = request.get_json()
+    if not data:
+        return {"status": "error", "message": "Missing JSON payload"}, 400
+
+    email = data.get("email")
+    if not email:
+        return {"status": "error", "message": "Missing email."}, 400
+
+    try:
+        user = User.get(User.username == email)
+        if user.verified:
+            return {"status": "error", "message": "Account already verified."}, 400
+
+        new_code = genCode()
+        user.verification_code = new_code
+        user.save()
+        send_email(email, new_code)
+        return {"status": "success", "message": "Verification code resent."}, 200
     except User.DoesNotExist:
         return {"status": "error", "message": "User not found."}, 404
 

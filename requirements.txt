@@ -3,5 +3,4 @@ Flask==3.0.3
 peewee==3.17.6
 psycopg2-binary==2.9.9
 gunicorn==23.0.0
-resend==2.4.0
 
