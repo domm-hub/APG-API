@@ -171,8 +171,13 @@ def handleSignUp():
         msg["Subject"] = "Verify your email"
         msg.set_content(f"Your verification code is: {code}")
         msg.add_alternative(email_html_body.format(secret_pin=code), subtype="html")
-        with smtplib.SMTP("smtp-relay.brevo.com", int(os.environ.get("SMTP_PORT", 587))) as s:
+        port = int(os.environ.get("SMTP_PORT", 587))
+        if port == 465:
+            s = smtplib.SMTP_SSL("smtp-relay.brevo.com", port)
+        else:
+            s = smtplib.SMTP("smtp-relay.brevo.com", port)
             s.starttls()
+        with s:
             s.login(os.environ.get("SMTP_LOGIN"), os.environ.get("SMTP_PASSWORD"))
             s.send_message(msg)
          
