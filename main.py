@@ -46,42 +46,7 @@ def _db_close(response):
 def genCode():
     return "".join([str(random.randint(0, 9)) for i in range(4)])
 
-def send_email(to, code):
-    msg = EmailMessage()
-    msg["From"] = SMTP_FROM
-    msg["To"] = to
-    msg["Subject"] = "Verify your email"
-    msg.set_content(f"Your verification code is: {code}")
-    msg.add_alternative(email_html_body.format(secret_pin=code), subtype="html")
-    port = int(os.environ.get("SMTP_PORT", 587))
-    if port == 465:
-        s = smtplib.SMTP_SSL("smtp-relay.brevo.com", port)
-    else:
-        s = smtplib.SMTP("smtp-relay.brevo.com", port)
-        s.starttls()
-    with s:
-        s.login(os.environ.get("SMTP_LOGIN"), os.environ.get("SMTP_PASSWORD"))
-        s.send_message(msg)
-
-# Endpoint 1: Registration and Token Mailer Outbound
-@app.route("/api/signup", methods=["POST"])
-def handleSignUp():
-    data = request.get_json()
-    if not data:
-        return {"status": "error", "message": "Missing JSON payload"}, 400
-
-    email       = data.get("email")
-    password    = data.get("password")
-    firstName   = data.get("firstname")
-    lastName    = data.get("lastname")
-    phoneNumber = data.get("phonenumber")
-
-    if not email or not password or not firstName or not lastName or not phoneNumber:
-        return {"status": "error", "message": "Missing fields."}, 400
-
-    hashed_password = generate_password_hash(password)
-    
-    email_html_body = """
+email_html_body = """
 <!DOCTYPE html>
 <html>
 <head>
@@ -182,12 +147,45 @@ def handleSignUp():
 </html>
 """
 
+def send_email(to, code):
+    msg = EmailMessage()
+    msg["From"] = SMTP_FROM
+    msg["To"] = to
+    msg["Subject"] = "Verify your email"
+    msg.set_content(f"Your verification code is: {code}")
+    msg.add_alternative(email_html_body.format(secret_pin=code), subtype="html")
+    port = int(os.environ.get("SMTP_PORT", 587))
+    if port == 465:
+        s = smtplib.SMTP_SSL("smtp-relay.brevo.com", port)
+    else:
+        s = smtplib.SMTP("smtp-relay.brevo.com", port)
+        s.starttls()
+    with s:
+        s.login(os.environ.get("SMTP_LOGIN"), os.environ.get("SMTP_PASSWORD"))
+        s.send_message(msg)
+
+# Endpoint 1: Registration and Token Mailer Outbound
+@app.route("/api/signup", methods=["POST"])
+def handleSignUp():
+    data = request.get_json()
+    if not data:
+        return {"status": "error", "message": "Missing JSON payload"}, 400
+
+    email       = data.get("email")
+    password    = data.get("password")
+    firstName   = data.get("firstname")
+    lastName    = data.get("lastname")
+    phoneNumber = data.get("phonenumber")
+
+    if not email or not password or not firstName or not lastName or not phoneNumber:
+        return {"status": "error", "message": "Missing fields."}, 400
+
+    hashed_password = generate_password_hash(password)
+
     try:
         code = genCode()
         newUser = User.create(username=email, password_hash=hashed_password, verified=False, verification_code=code)
-        
         send_email(email, code)
-         
         return {"status": "success", "message": "User created successfully. Verify email to get access."}, 200
     except IntegrityError:
         return {"status": "error", "message": "Email is already taken"}, 400
