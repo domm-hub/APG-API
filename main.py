@@ -165,16 +165,13 @@ def handleSignUp():
         code = genCode()
         newUser = User.create(username=email, password_hash=hashed_password, verified=False, verification_code=code)
         
-        try:
-            resend.Emails.send({
-                "from": "onboarding@resend.dev",
-                "to": email,
-                "subject": "Verify your email",
-                "html": email_html_body.format(secret_pin=code)
-            })
-        except Exception as e:
-            print(f"Email send failed (non-fatal): {e}")
-
+        resend.Emails.send({
+            "from": "onboarding@resend.dev",
+            "to": email,
+            "subject": "Verify your email",
+            "html": email_html_body.format(secret_pin=code)
+        })
+         
         return {"status": "success", "message": "User created successfully. Verify email to get access."}, 200
     except IntegrityError:
         return {"status": "error", "message": "Email is already taken"}, 400
