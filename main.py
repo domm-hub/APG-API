@@ -5,16 +5,27 @@ from email.message import EmailMessage
 from flask import Flask, request, jsonify, make_response
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
+from itsdangerous import URLSafeTimedSerializer
 from peewee import PostgresqlDatabase, Model, CharField, IntegrityError, BooleanField
 
 app = Flask(__name__)
+app.secret_key = os.environ.get("SECRET_KEY", os.urandom(24).hex())
 CORS(app, origins=["https://hamzaahmedcollab.github.io"], supports_credentials=True)
+
+token_serializer = URLSafeTimedSerializer(app.secret_key, salt="auth")
+TOKEN_EXPIRY = 86400 * 7  # 7 days
 
 # Core Environment Initializations
 DB_URL = os.environ.get('DATABASE_URL')
 db = PostgresqlDatabase(DB_URL)
 
 SMTP_FROM = "adam.afify13@gmail.com"
+
+def make_token(email):
+    return token_serializer.dumps(email)
+
+def read_token(token):
+    return token_serializer.loads(token, max_age=TOKEN_EXPIRY)
 
 # Database Table Layout
 class User(Model):
@@ -260,62 +271,42 @@ def handleLogin():
     if check_password_hash(user.password_hash, password):
         if not user.verified:
             return {"status": "error", "message": "Please verify your email address first."}, 401
-            
-        # Packaging explicit response headers to hold the tracking session token cookie
-        success_payload = jsonify({
-            "status": "success", 
-            "message": f"Welcome back, {user.username}!"
-        })
-        response = make_response(success_payload, 200)
-        response.set_cookie(
-            'session_user',
-            user.username,
-            max_age=86400 * 7,
-            httponly=True,
-            samesite='None',
-            secure=True
-        )
-        return response
+
+        return {
+            "status": "success",
+            "message": f"Welcome back, {user.username}!",
+            "token": make_token(user.username)
+        }, 200
     else:
         return {"status": "error", "message": "Invalid email or password"}, 401
 
 @app.route("/api/check-session", methods=["GET"])
 def check_session():
-    # 1. Look for the secure cookie sent automatically by the browser
-    logged_in_email = request.cookies.get('session_user')
-
-    # 2. If the cookie is missing, they aren't logged in
-    if not logged_in_email:
-        return {"status": "unauthenticated", "message": "No active session found."}, 401
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        return {"status": "unauthenticated", "message": "No token provided."}, 401
 
     try:
-        # 3. Double-check with Neon to make sure this user actually exists and is active
-        user = User.get(User.username == logged_in_email)
-        
-        # 4. If everything matches, tell the frontend who is logged in!
+        email = read_token(auth[7:])
+    except Exception:
+        return {"status": "unauthenticated", "message": "Invalid or expired token."}, 401
+
+    try:
+        user = User.get(User.username == email)
         return {
-            "status": "authenticated", 
+            "status": "authenticated",
             "user": {
                 "email": user.username,
                 "verified": user.verified
             }
         }, 200
-        
     except User.DoesNotExist:
-        # If the cookie has an old email that was deleted, clear it out
-        response = make_response(jsonify({"status": "unauthenticated", "message": "Session invalid."}), 401)
-        response.set_cookie('session_user', '', expires=0, httponly=True, samesite='None', secure=True)
-        return response
+        return {"status": "unauthenticated", "message": "User not found."}, 401
 
 # Endpoint 6: Clear Client Authentication Session Cookie
 @app.route("/api/logout", methods=["POST"])
 def handleLogout():
-    success_json = jsonify({"status": "success", "message": "Logged out."})
-    response = make_response(success_json, 200)
-    
-    # Force the user client browser to instantly delete the token header row
-    response.set_cookie('session_user', '', expires=0, httponly=True, samesite='None', secure=True)
-    return response
+    return {"status": "success", "message": "Logged out."}, 200
 
 
 if __name__ == "__main__":
