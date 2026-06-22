@@ -268,12 +268,12 @@ def handleLogin():
         })
         response = make_response(success_payload, 200)
         response.set_cookie(
-            'session_user',      
-            user.username,       
-            max_age=86400 * 7,   
-            httponly=True,       
-            samesite='Lax',       
-            secure=True        # Uncomment on Cloud Run deployment!
+            'session_user',
+            user.username,
+            max_age=86400 * 7,
+            httponly=True,
+            samesite='None',
+            secure=True
         )
         return response
     else:
@@ -304,7 +304,7 @@ def check_session():
     except User.DoesNotExist:
         # If the cookie has an old email that was deleted, clear it out
         response = make_response(jsonify({"status": "unauthenticated", "message": "Session invalid."}), 401)
-        response.set_cookie('session_user', '', expires=0)
+        response.set_cookie('session_user', '', expires=0, httponly=True, samesite='None', secure=True)
         return response
 
 # Endpoint 6: Clear Client Authentication Session Cookie
@@ -314,7 +314,7 @@ def handleLogout():
     response = make_response(success_json, 200)
     
     # Force the user client browser to instantly delete the token header row
-    response.set_cookie('session_user', '', expires=0, httponly=True, samesite='Lax', secure=True)
+    response.set_cookie('session_user', '', expires=0, httponly=True, samesite='None', secure=True)
     return response
 
 
