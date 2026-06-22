@@ -1,15 +1,15 @@
 import os
 import random
+import smtplib
+from email.message import EmailMessage
 from flask import Flask, request, jsonify, make_response
 from werkzeug.security import generate_password_hash, check_password_hash
 from peewee import PostgresqlDatabase, Model, CharField, IntegrityError, BooleanField
-import resend
 
 app = Flask(__name__)
 
 # Core Environment Initializations
 DB_URL = os.environ.get('DATABASE_URL')
-resend.api_key = os.environ.get("RESEND_API_KEY")
 db = PostgresqlDatabase(DB_URL)
 
 # Database Table Layout
@@ -165,12 +165,15 @@ def handleSignUp():
         code = genCode()
         newUser = User.create(username=email, password_hash=hashed_password, verified=False, verification_code=code)
         
-        resend.Emails.send({
-            "from": "onboarding@resend.dev",
-            "to": email,
-            "subject": "Verify your email",
-            "html": email_html_body.format(secret_pin=code)
-        })
+        msg = EmailMessage()
+        msg["From"] = os.environ.get("SMTP_LOGIN")
+        msg["To"] = email
+        msg["Subject"] = "Verify your email"
+        msg.set_content(f"Your verification code is: {code}")
+        msg.add_alternative(email_html_body.format(secret_pin=code), subtype="html")
+        with smtplib.SMTP_SSL("smtp-relay.brevo.com", int(os.environ.get("SMTP_PORT", 465))) as s:
+            s.login(os.environ.get("SMTP_LOGIN"), os.environ.get("SMTP_PASSWORD"))
+            s.send_message(msg)
          
         return {"status": "success", "message": "User created successfully. Verify email to get access."}, 200
     except IntegrityError:
