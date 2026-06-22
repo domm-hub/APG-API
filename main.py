@@ -234,12 +234,40 @@ def handleLogin():
             user.username,       
             max_age=86400 * 7,   
             httponly=True,       
-            samesite='Lax'       
-            # secure=True        # Uncomment on Cloud Run deployment!
+            samesite='Lax',       
+            secure=True        # Uncomment on Cloud Run deployment!
         )
         return response
     else:
         return {"status": "error", "message": "Invalid email or password"}, 401
+
+@app.route("/api/check-session", methods=["GET"])
+def check_session():
+    # 1. Look for the secure cookie sent automatically by the browser
+    logged_in_email = request.cookies.get('session_user')
+
+    # 2. If the cookie is missing, they aren't logged in
+    if not logged_in_email:
+        return {"status": "unauthenticated", "message": "No active session found."}, 401
+
+    try:
+        # 3. Double-check with Neon to make sure this user actually exists and is active
+        user = User.get(User.username == logged_in_email)
+        
+        # 4. If everything matches, tell the frontend who is logged in!
+        return {
+            "status": "authenticated", 
+            "user": {
+                "email": user.username,
+                "verified": user.verified
+            }
+        }, 200
+        
+    except User.DoesNotExist:
+        # If the cookie has an old email that was deleted, clear it out
+        response = make_response(jsonify({"status": "unauthenticated", "message": "Session invalid."}), 401)
+        response.set_cookie('session_user', '', expires=0)
+        return response
 
 if __name__ == "__main__":
     app.run(debug=True)
