@@ -269,6 +269,17 @@ def check_session():
         response.set_cookie('session_user', '', expires=0)
         return response
 
+# Endpoint 6: Clear Client Authentication Session Cookie
+@app.route("/api/logout", methods=["POST"])
+def handleLogout():
+    success_json = jsonify({"status": "success", "message": "Logged out."})
+    response = make_response(success_json, 200)
+    
+    # Force the user client browser to instantly delete the token header row
+    response.set_cookie('session_user', '', expires=0, httponly=True, samesite='Lax', secure=True)
+    return response
+
+
 if __name__ == "__main__":
     app.run(debug=True)
 
