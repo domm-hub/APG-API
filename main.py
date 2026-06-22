@@ -1,7 +1,6 @@
 import os
 import random
-import smtplib
-from email.message import EmailMessage
+import resend
 from flask import Flask, request, jsonify, make_response
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -12,6 +11,7 @@ CORS(app, origins=["https://hamzaahmedcollab.github.io"], supports_credentials=T
 
 # Core Environment Initializations
 DB_URL = os.environ.get('DATABASE_URL')
+resend.api_key = os.environ.get("RESEND_API_KEY")
 db = PostgresqlDatabase(DB_URL)
 
 # Database Table Layout
@@ -167,21 +167,12 @@ def handleSignUp():
         code = genCode()
         newUser = User.create(username=email, password_hash=hashed_password, verified=False, verification_code=code)
         
-        msg = EmailMessage()
-        msg["From"] = os.environ.get("SMTP_LOGIN")
-        msg["To"] = email
-        msg["Subject"] = "Verify your email"
-        msg.set_content(f"Your verification code is: {code}")
-        msg.add_alternative(email_html_body.format(secret_pin=code), subtype="html")
-        port = int(os.environ.get("SMTP_PORT", 587))
-        if port == 465:
-            s = smtplib.SMTP_SSL("smtp-relay.brevo.com", port)
-        else:
-            s = smtplib.SMTP("smtp-relay.brevo.com", port)
-            s.starttls()
-        with s:
-            s.login(os.environ.get("SMTP_LOGIN"), os.environ.get("SMTP_PASSWORD"))
-            s.send_message(msg)
+        resend.Emails.send({
+            "from": "onboarding@resend.dev",
+            "to": email,
+            "subject": "Verify your email",
+            "html": email_html_body.format(secret_pin=code)
+        })
          
         return {"status": "success", "message": "User created successfully. Verify email to get access."}, 200
     except IntegrityError:
