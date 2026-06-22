@@ -3,10 +3,12 @@ import random
 import smtplib
 from email.message import EmailMessage
 from flask import Flask, request, jsonify, make_response
+from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 from peewee import PostgresqlDatabase, Model, CharField, IntegrityError, BooleanField
 
 app = Flask(__name__)
+CORS(app, origins=["https://hamzaahmedcollab.github.io"], supports_credentials=True)
 
 # Core Environment Initializations
 DB_URL = os.environ.get('DATABASE_URL')

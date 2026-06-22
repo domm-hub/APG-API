@@ -1,3 +1,4 @@
+flask-cors==5.0.0
 Flask==3.0.3
 peewee==3.17.6
 psycopg2-binary==2.9.9
