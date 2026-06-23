@@ -43,6 +43,7 @@ class User(Model):
 class RequestModel(Model):
     email = CharField(max_length=50)
     prompt = TextField()
+    status = CharField(max_length=20, default="pending")
     created_at = DateTimeField(default=datetime.now)
 
     class Meta:
@@ -64,6 +65,9 @@ def _db_connect():
         db.connect()
         db.execute_sql("""
             ALTER TABLE "user" ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT false
+        """)
+        db.execute_sql("""
+            ALTER TABLE "requestmodel" ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'pending'
         """)
     except Exception:
         pass
@@ -395,6 +399,7 @@ def list_requests():
         "id": r.id,
         "email": r.email,
         "prompt": r.prompt,
+        "status": r.status,
         "created_at": r.created_at.isoformat()
     } for r in requests])
 
@@ -402,6 +407,119 @@ def list_requests():
 @app.route("/api/logout", methods=["POST"])
 def handleLogout():
     return {"status": "success", "message": "Logged out."}, 200
+
+
+def require_admin():
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        return None, {"status": "error", "message": "Not authenticated."}, 401
+    try:
+        email = read_token(auth[7:])
+    except Exception:
+        return None, {"status": "error", "message": "Invalid token."}, 401
+    try:
+        user = User.get(User.username == email)
+        if not user.is_admin:
+            return None, {"status": "error", "message": "Not authorized."}, 403
+        return user, None, None
+    except User.DoesNotExist:
+        return None, {"status": "error", "message": "User not found."}, 401
+
+
+@app.route("/api/admin/stats", methods=["GET"])
+def admin_stats():
+    user, err, code = require_admin()
+    if err: return err, code
+
+    return {
+        "total_users": User.select().count(),
+        "verified_users": User.select().where(User.verified == True).count(),
+        "admin_users": User.select().where(User.is_admin == True).count(),
+        "total_requests": RequestModel.select().count(),
+        "pending_requests": RequestModel.select().where(RequestModel.status == "pending").count(),
+    }, 200
+
+
+@app.route("/api/admin/users", methods=["GET"])
+def admin_users():
+    user, err, code = require_admin()
+    if err: return err, code
+
+    users = User.select().order_by(User.username)
+    return jsonify([{
+        "email": u.username,
+        "verified": u.verified,
+        "is_admin": u.is_admin,
+    } for u in users])
+
+
+@app.route("/api/admin/users", methods=["DELETE"])
+def admin_delete_users():
+    user, err, code = require_admin()
+    if err: return err, code
+
+    User.delete().execute()
+    return {"status": "success", "message": "All users deleted."}, 200
+
+
+@app.route("/api/admin/requests", methods=["GET"])
+def admin_requests():
+    user, err, code = require_admin()
+    if err: return err, code
+
+    reqs = RequestModel.select().order_by(RequestModel.created_at.desc())
+    return jsonify([{
+        "id": r.id,
+        "email": r.email,
+        "prompt": r.prompt,
+        "status": r.status,
+        "created_at": r.created_at.isoformat()
+    } for r in reqs])
+
+
+@app.route("/api/admin/requests/<int:req_id>", methods=["DELETE"])
+def admin_delete_request(req_id):
+    user, err, code = require_admin()
+    if err: return err, code
+
+    try:
+        req = RequestModel.get(RequestModel.id == req_id)
+        req.delete_instance()
+        return {"status": "success", "message": "Request deleted."}, 200
+    except RequestModel.DoesNotExist:
+        return {"status": "error", "message": "Request not found."}, 404
+
+
+@app.route("/api/admin/requests/<int:req_id>/status", methods=["POST"])
+def admin_update_request_status(req_id):
+    user, err, code = require_admin()
+    if err: return err, code
+
+    data = request.get_json()
+    if not data or not data.get("status"):
+        return {"status": "error", "message": "Missing status."}, 400
+
+    new_status = data["status"]
+    if new_status not in ("accepted", "rejected"):
+        return {"status": "error", "message": "Invalid status."}, 400
+
+    try:
+        req = RequestModel.get(RequestModel.id == req_id)
+        req.status = new_status
+        req.save()
+        return {"status": "success", "message": f"Request {new_status}."}, 200
+    except RequestModel.DoesNotExist:
+        return {"status": "error", "message": "Request not found."}, 404
+
+
+@app.route("/api/admin/cleanup", methods=["POST"])
+def admin_cleanup():
+    user, err, code = require_admin()
+    if err: return err, code
+
+    RequestModel.delete().execute()
+    User.delete().execute()
+    return {"status": "success", "message": "Everything deleted."}, 200
 
 
 if __name__ == "__main__":
