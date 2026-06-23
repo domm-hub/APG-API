@@ -60,12 +60,11 @@ except Exception as e:
 # Optimizing Neon Database connection pools per request
 @app.before_request
 def _db_connect():
-    if not db.is_closed():
-        return
     try:
         db.connect()
+        db.execute_sql("ALTER TABLE user ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT false;")
     except Exception:
-        pass  # will retry on next request
+        pass
 
 @app.after_request
 def _db_close(response):
