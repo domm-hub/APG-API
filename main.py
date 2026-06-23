@@ -197,16 +197,39 @@ def send_email(to, code):
         s.login(os.environ.get("SMTP_LOGIN"), os.environ.get("SMTP_PASSWORD"))
         s.send_message(msg)
 
-@app.route("/api/debug", methods=["GET"])
+@app.route("/api/debug", methods=["GET", "POST"])
 def debug():
-    import traceback, sys
+    import traceback
     try:
         db.connect(reuse_if_open=True)
         db.execute_sql("SELECT 1")
+
+        data = request.get_json(silent=True) if request.method == "POST" else None
+        users = list(User.select().limit(1))
+
+        db.execute_sql("SELECT COUNT(*) FROM \"user\"")
+        count = db.execute_sql("SELECT COUNT(*) FROM \"user\"").fetchone()[0]
+
         db.close()
-        return {"msg": "DB ok"}
+        return {
+            "method": request.method,
+            "data": data,
+            "db_ok": True,
+            "user_count": count,
+            "has_is_admin_col": bool(
+                [c for c in db.execute_sql(
+                    "SELECT column_name FROM information_schema.columns WHERE table_name='user' AND column_name='is_admin'"
+                ).fetchall()]
+            )
+        }
     except Exception as e:
-        return {"msg": f"DB fail: {type(e).__name__}: {e}", "trace": traceback.format_exc()}, 500
+        return {"msg": f"Fail: {type(e).__name__}: {e}", "trace": traceback.format_exc()}, 500
+    finally:
+        try:
+            if not db.is_closed():
+                db.close()
+        except:
+            pass
 
 # Endpoint 1: Registration and Token Mailer Outbound
 @app.route("/api/signup", methods=["POST"])
