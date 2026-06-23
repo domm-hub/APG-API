@@ -6,7 +6,8 @@ from flask import Flask, request, jsonify, make_response
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
 from itsdangerous import URLSafeTimedSerializer
-from peewee import PostgresqlDatabase, Model, CharField, IntegrityError, BooleanField
+from peewee import PostgresqlDatabase, Model, CharField, TextField, DateTimeField, IntegrityError, BooleanField
+from datetime import datetime, timezone
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", os.urandom(24).hex())
@@ -37,9 +38,17 @@ class User(Model):
     class Meta:
         database = db
 
+class RequestModel(Model):
+    email = CharField(max_length=50)
+    prompt = TextField()
+    created_at = DateTimeField(default=datetime.now)
+
+    class Meta:
+        database = db
+
 # Table Engine Initialization Loop
 with db:
-    db.create_tables([User])
+    db.create_tables([User, RequestModel])
 
 # Optimizing Neon Database connection pools per request
 @app.before_request
@@ -302,6 +311,37 @@ def check_session():
         }, 200
     except User.DoesNotExist:
         return {"status": "unauthenticated", "message": "User not found."}, 401
+
+@app.route("/api/requests", methods=["POST"])
+def submit_request():
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        return {"status": "error", "message": "Not authenticated."}, 401
+    try:
+        email = read_token(auth[7:])
+    except Exception:
+        return {"status": "error", "message": "Invalid token."}, 401
+
+    data = request.get_json()
+    if not data or not data.get("prompt"):
+        return {"status": "error", "message": "Missing prompt."}, 400
+
+    RequestModel.create(email=email, prompt=data["prompt"])
+    return {"status": "success", "message": "Request saved."}, 200
+
+@app.route("/api/requests", methods=["GET"])
+def list_requests():
+    master = os.environ.get("MASTER_PASSWORD", "admin123")
+    if request.args.get("master") != master:
+        return {"status": "error", "message": "Unauthorized."}, 401
+
+    requests = RequestModel.select().order_by(RequestModel.created_at.desc())
+    return jsonify([{
+        "id": r.id,
+        "email": r.email,
+        "prompt": r.prompt,
+        "created_at": r.created_at.isoformat()
+    } for r in requests])
 
 # Endpoint 6: Clear Client Authentication Session Cookie
 @app.route("/api/logout", methods=["POST"])
