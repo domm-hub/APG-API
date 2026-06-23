@@ -61,15 +61,18 @@ except Exception as e:
 @app.before_request
 def _db_connect():
     try:
-        db.connect()
+        db.connect(reuse_if_open=True)
         db.execute_sql("ALTER TABLE user ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT false;")
     except Exception:
         pass
 
 @app.after_request
 def _db_close(response):
-    if not db.is_closed():
-        db.close()
+    try:
+        if not db.is_closed():
+            db.close()
+    except Exception:
+        pass
     return response
 
 # Numeric unique token algorithm 
