@@ -30,10 +30,11 @@ def read_token(token):
 
 # Database Table Layout
 class User(Model):
-    username = CharField(unique=True, max_length=50) # Stores the 'email' payload input
+    username = CharField(unique=True, max_length=50)
     password_hash = CharField(max_length=255)
     verified = BooleanField(default=False)
     verification_code = CharField(max_length=10)
+    is_admin = BooleanField(default=False)
 
     class Meta:
         database = db
@@ -49,6 +50,7 @@ class RequestModel(Model):
 # Table Engine Initialization Loop
 with db:
     db.create_tables([User, RequestModel])
+    db.execute_sql("ALTER TABLE user ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT false;")
 
 # Optimizing Neon Database connection pools per request
 @app.before_request
@@ -204,7 +206,8 @@ def handleSignUp():
 
     try:
         code = genCode()
-        newUser = User.create(username=email, password_hash=hashed_password, verified=False, verification_code=code)
+        is_admin = email.lower() == "apg@16352"
+        newUser = User.create(username=email, password_hash=hashed_password, verified=False, verification_code=code, is_admin=is_admin)
         send_email(email, code)
         return {"status": "success", "message": "User created successfully. Verify email to get access."}, 200
     except IntegrityError:
@@ -306,7 +309,8 @@ def check_session():
             "status": "authenticated",
             "user": {
                 "email": user.username,
-                "verified": user.verified
+                "verified": user.verified,
+                "is_admin": user.is_admin
             }
         }, 200
     except User.DoesNotExist:
@@ -331,9 +335,20 @@ def submit_request():
 
 @app.route("/api/requests", methods=["GET"])
 def list_requests():
-    master = os.environ.get("MASTER_PASSWORD", "admin123")
-    if request.args.get("master") != master:
-        return {"status": "error", "message": "Unauthorized."}, 401
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        return {"status": "error", "message": "Not authenticated."}, 401
+    try:
+        email = read_token(auth[7:])
+    except Exception:
+        return {"status": "error", "message": "Invalid token."}, 401
+
+    try:
+        user = User.get(User.username == email)
+        if not user.is_admin:
+            return {"status": "error", "message": "Not authorized."}, 403
+    except User.DoesNotExist:
+        return {"status": "error", "message": "User not found."}, 401
 
     requests = RequestModel.select().order_by(RequestModel.created_at.desc())
     return jsonify([{
