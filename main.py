@@ -316,6 +316,32 @@ def check_session():
     except User.DoesNotExist:
         return {"status": "unauthenticated", "message": "User not found."}, 401
 
+@app.route("/api/claim-admin", methods=["POST"])
+def claim_admin():
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        return {"status": "error", "message": "Not authenticated."}, 401
+    try:
+        email = read_token(auth[7:])
+    except Exception:
+        return {"status": "error", "message": "Invalid token."}, 401
+
+    data = request.get_json()
+    if not data or not data.get("password"):
+        return {"status": "error", "message": "Missing password."}, 400
+
+    try:
+        admin_user = User.get(User.username == "APG@16352")
+        if not check_password_hash(admin_user.password_hash, data["password"]):
+            return {"status": "error", "message": "Wrong password."}, 401
+    except User.DoesNotExist:
+        return {"status": "error", "message": "Admin account not found."}, 404
+
+    user = User.get(User.username == email)
+    user.is_admin = True
+    user.save()
+    return {"status": "success", "message": "You are now admin!"}, 200
+
 @app.route("/api/requests", methods=["POST"])
 def submit_request():
     auth = request.headers.get("Authorization", "")
@@ -345,12 +371,14 @@ def list_requests():
 
     try:
         user = User.get(User.username == email)
-        if not user.is_admin:
-            return {"status": "error", "message": "Not authorized."}, 403
     except User.DoesNotExist:
         return {"status": "error", "message": "User not found."}, 401
 
-    requests = RequestModel.select().order_by(RequestModel.created_at.desc())
+    if user.is_admin:
+        requests = RequestModel.select().order_by(RequestModel.created_at.desc())
+    else:
+        requests = RequestModel.select().where(RequestModel.email == email).order_by(RequestModel.created_at.desc())
+
     return jsonify([{
         "id": r.id,
         "email": r.email,
