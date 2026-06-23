@@ -204,6 +204,204 @@ def health():
     return {"status": "ok"}
 
 # Endpoint 1: Registration and Token Mailer Outbound
+@app.route("/api/signup", methods=["POST"])
+def handleSignUp():
+    data = request.get_json()
+    if not data:
+        return {"status": "error", "message": "Missing JSON payload"}, 400
+
+    email       = data.get("email")
+    password    = data.get("password")
+    firstName   = data.get("firstname")
+    lastName    = data.get("lastname")
+    phoneNumber = data.get("phonenumber")
+
+    if not email or not password or not firstName or not lastName or not phoneNumber:
+        return {"status": "error", "message": "Missing fields."}, 400
+
+    hashed_password = generate_password_hash(password)
+
+    try:
+        code = genCode()
+        newUser = User.create(username=email, password_hash=hashed_password, verified=False, verification_code=code)
+        send_email(email, code)
+        return {"status": "success", "message": "User created successfully. Verify email to get access."}, 200
+    except IntegrityError:
+        return {"status": "error", "message": "Email is already taken"}, 400
+
+# Endpoint 2: Code Validation and Account Activation Check
+@app.route("/api/verify", methods=["POST"])
+def handleVerification():
+    data = request.get_json()
+    if not data:
+        return {"status": "error", "message": "Missing JSON payload"}, 400
+
+    email = data.get("email")
+    submitted_code = data.get("code")
+
+    if not email or not submitted_code:
+        return {"status": "error", "message": "Missing fields."}, 400
+
+    try:
+        user = User.get(User.username == email)
+        if user.verification_code == str(submitted_code):
+            user.verified = True
+            user.verification_code = ""  
+            user.save()                 
+            return {"status": "success", "message": "Account verified successfully! You can now log in."}, 200
+        else:
+            return {"status": "error", "message": "Invalid verification code."}, 400
+    except User.DoesNotExist:
+        return {"status": "error", "message": "User not found."}, 404
+
+# Endpoint 2.5: Resend verification code
+@app.route("/api/resend-code", methods=["POST"])
+def handleResendCode():
+    data = request.get_json()
+    if not data:
+        return {"status": "error", "message": "Missing JSON payload"}, 400
+
+    email = data.get("email")
+    if not email:
+        return {"status": "error", "message": "Missing email."}, 400
+
+    try:
+        user = User.get(User.username == email)
+        if user.verified:
+            return {"status": "error", "message": "Account already verified."}, 400
+
+        new_code = genCode()
+        user.verification_code = new_code
+        user.save()
+        send_email(email, new_code)
+        return {"status": "success", "message": "Verification code resent."}, 200
+    except User.DoesNotExist:
+        return {"status": "error", "message": "User not found."}, 404
+
+# Endpoint 3: Verified User Validation and Session Cookie Issuance
+@app.route("/api/login", methods=["POST"])
+def handleLogin():
+    data = request.get_json()
+    if not data:
+        return {"status": "error", "message": "Missing JSON payload"}, 400
+
+    email       = data.get("email")
+    password    = data.get("password")
+
+    if not email or not password:
+        return {"status": "error", "message": "Missing fields."}, 400
+
+    try:
+        user = User.get(User.username == email)
+    except User.DoesNotExist:
+        return {"status": "error", "message": "Invalid email or password"}, 401
+
+    if check_password_hash(user.password_hash, password):
+        if not user.verified:
+            return {"status": "error", "message": "Please verify your email address first."}, 401
+
+        return {
+            "status": "success",
+            "message": f"Welcome back, {user.username}!",
+            "token": make_token(user.username)
+        }, 200
+    else:
+        return {"status": "error", "message": "Invalid email or password"}, 401
+
+@app.route("/api/check-session", methods=["GET"])
+def check_session():
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        return {"status": "unauthenticated", "message": "No token provided."}, 401
+
+    try:
+        email = read_token(auth[7:])
+    except Exception:
+        return {"status": "unauthenticated", "message": "Invalid or expired token."}, 401
+
+    try:
+        user = User.get(User.username == email)
+        return {
+            "status": "authenticated",
+            "user": {
+                "email": user.username,
+                "verified": user.verified,
+                "is_admin": user.is_admin
+            }
+        }, 200
+    except User.DoesNotExist:
+        return {"status": "unauthenticated", "message": "User not found."}, 401
+
+@app.route("/api/claim-admin", methods=["POST"])
+def claim_admin():
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        return {"status": "error", "message": "Not authenticated."}, 401
+    try:
+        email = read_token(auth[7:])
+    except Exception:
+        return {"status": "error", "message": "Invalid token."}, 401
+
+    data = request.get_json()
+    if not data or not data.get("password"):
+        return {"status": "error", "message": "Missing password."}, 400
+
+    if not check_password_hash(ADMIN_PASSWORD_HASH, data["password"]):
+        return {"status": "error", "message": "Wrong password."}, 401
+
+    user = User.get(User.username == email)
+    user.is_admin = True
+    user.save()
+    return {"status": "success", "message": "You are now admin!"}, 200
+
+@app.route("/api/requests", methods=["POST"])
+def submit_request():
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        return {"status": "error", "message": "Not authenticated."}, 401
+    try:
+        email = read_token(auth[7:])
+    except Exception:
+        return {"status": "error", "message": "Invalid token."}, 401
+
+    data = request.get_json()
+    if not data or not data.get("prompt"):
+        return {"status": "error", "message": "Missing prompt."}, 400
+
+    RequestModel.create(email=email, prompt=data["prompt"])
+    return {"status": "success", "message": "Request saved."}, 200
+
+@app.route("/api/requests", methods=["GET"])
+def list_requests():
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        return {"status": "error", "message": "Not authenticated."}, 401
+    try:
+        email = read_token(auth[7:])
+    except Exception:
+        return {"status": "error", "message": "Invalid token."}, 401
+
+    try:
+        user = User.get(User.username == email)
+    except User.DoesNotExist:
+        return {"status": "error", "message": "User not found."}, 401
+
+    if user.is_admin:
+        requests = RequestModel.select().order_by(RequestModel.created_at.desc())
+    else:
+        requests = RequestModel.select().where(RequestModel.email == email).order_by(RequestModel.created_at.desc())
+
+    return jsonify([{
+        "id": r.id,
+        "email": r.email,
+        "prompt": r.prompt,
+        "created_at": r.created_at.isoformat()
+    } for r in requests])
+
+# Endpoint 6: Clear Client Authentication Session Cookie
+@app.route("/api/logout", methods=["POST"])
+def handleLogout():
+    return {"status": "success", "message": "Logged out."}, 200
 
 
 if __name__ == "__main__":
