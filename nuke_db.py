@@ -3,7 +3,10 @@ from dotenv import load_dotenv
 import os
 
 load_dotenv()
+print("Press enter 3 times")
 
+for i in range(3):
+    input("once" if i == 0 else "and again")
 db = PostgresqlDatabase(os.environ["DATABASE_URL"])
 
 class User(Model):

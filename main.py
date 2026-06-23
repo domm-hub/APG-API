@@ -15,6 +15,7 @@ CORS(app, origins=["https://hamzaahmedcollab.github.io"], supports_credentials=T
 
 token_serializer = URLSafeTimedSerializer(app.secret_key, salt="auth")
 TOKEN_EXPIRY = 86400 * 7  # 7 days
+ADMIN_PASSWORD_HASH = os.environ.get("ADMIN_PASSWORD_HASH", "scrypt:32768:8:1$cbOQrgRcvYvBZvJJ$a4c09673c7a4a1f16f5c40555d6da7e34d6231c57fbd32e43af045b8a8e05db3b9ce3a2ee9372d91dd35cf74b97ed60f76d5809d02db26e74343643a55199db8")
 
 # Core Environment Initializations
 DB_URL = os.environ.get('DATABASE_URL')
@@ -48,9 +49,13 @@ class RequestModel(Model):
         database = db
 
 # Table Engine Initialization Loop
-with db:
+try:
+    db.connect(reuse_if_open=True)
     db.create_tables([User, RequestModel])
     db.execute_sql("ALTER TABLE user ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT false;")
+    db.close()
+except Exception as e:
+    print(f"[startup] DB init failed (will retry per request): {e}")
 
 # Optimizing Neon Database connection pools per request
 @app.before_request
@@ -206,8 +211,7 @@ def handleSignUp():
 
     try:
         code = genCode()
-        is_admin = email.lower() == "apg@16352"
-        newUser = User.create(username=email, password_hash=hashed_password, verified=False, verification_code=code, is_admin=is_admin)
+        newUser = User.create(username=email, password_hash=hashed_password, verified=False, verification_code=code)
         send_email(email, code)
         return {"status": "success", "message": "User created successfully. Verify email to get access."}, 200
     except IntegrityError:
@@ -330,12 +334,8 @@ def claim_admin():
     if not data or not data.get("password"):
         return {"status": "error", "message": "Missing password."}, 400
 
-    try:
-        admin_user = User.get(User.username == "APG@16352")
-        if not check_password_hash(admin_user.password_hash, data["password"]):
-            return {"status": "error", "message": "Wrong password."}, 401
-    except User.DoesNotExist:
-        return {"status": "error", "message": "Admin account not found."}, 404
+    if not check_password_hash(ADMIN_PASSWORD_HASH, data["password"]):
+        return {"status": "error", "message": "Wrong password."}, 401
 
     user = User.get(User.username == email)
     user.is_admin = True
