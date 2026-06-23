@@ -60,8 +60,12 @@ except Exception as e:
 # Optimizing Neon Database connection pools per request
 @app.before_request
 def _db_connect():
-    if db.is_closed():
+    if not db.is_closed():
+        return
+    try:
         db.connect()
+    except Exception:
+        pass  # will retry on next request
 
 @app.after_request
 def _db_close(response):
@@ -390,6 +394,26 @@ def list_requests():
 @app.route("/api/logout", methods=["POST"])
 def handleLogout():
     return {"status": "success", "message": "Logged out."}, 200
+
+@app.route("/api/health", methods=["GET"])
+def health():
+    db_ok = False
+    try:
+        if db.is_closed():
+            db.connect()
+        db.execute_sql("SELECT 1")
+        db_ok = True
+    except Exception as e:
+        db_err = str(e)
+    finally:
+        if not db.is_closed():
+            db.close()
+    return {
+        "status": "ok" if db_ok else "error",
+        "has_db_url": bool(os.environ.get("DATABASE_URL")),
+        "has_secret_key": bool(os.environ.get("SECRET_KEY")),
+        "has_smtp_login": bool(os.environ.get("SMTP_LOGIN")),
+    }, 200 if db_ok else 500
 
 
 if __name__ == "__main__":
