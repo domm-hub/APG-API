@@ -197,6 +197,17 @@ def send_email(to, code):
         s.login(os.environ.get("SMTP_LOGIN"), os.environ.get("SMTP_PASSWORD"))
         s.send_message(msg)
 
+@app.route("/api/debug", methods=["GET"])
+def debug():
+    import traceback, sys
+    try:
+        db.connect(reuse_if_open=True)
+        db.execute_sql("SELECT 1")
+        db.close()
+        return {"msg": "DB ok"}
+    except Exception as e:
+        return {"msg": f"DB fail: {type(e).__name__}: {e}", "trace": traceback.format_exc()}, 500
+
 # Endpoint 1: Registration and Token Mailer Outbound
 @app.route("/api/signup", methods=["POST"])
 def handleSignUp():
