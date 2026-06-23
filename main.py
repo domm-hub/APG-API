@@ -202,25 +202,38 @@ def debug():
     import traceback
     try:
         db.connect(reuse_if_open=True)
-        db.execute_sql("SELECT 1")
 
-        data = request.get_json(silent=True) if request.method == "POST" else None
-        users = list(User.select().limit(1))
+        # Check if is_admin column exists
+        cur = db.execute_sql(
+            "SELECT column_name FROM information_schema.columns WHERE table_name='user' AND column_name='is_admin'"
+        )
+        col_exists = bool(cur.fetchall())
 
-        db.execute_sql("SELECT COUNT(*) FROM \"user\"")
-        count = db.execute_sql("SELECT COUNT(*) FROM \"user\"").fetchone()[0]
+        # Try to add it explicitly
+        try:
+            db.execute_sql("ALTER TABLE \"user\" ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT false;")
+        except Exception as alter_err:
+            alter_result = f"ALTER failed: {alter_err}"
+        else:
+            alter_result = "ALTER ok"
+
+        # Re-check
+        cur = db.execute_sql(
+            "SELECT column_name FROM information_schema.columns WHERE table_name='user' AND column_name='is_admin'"
+        )
+        col_exists_after = bool(cur.fetchall())
+
+        columns = [r[0] for r in db.execute_sql(
+            "SELECT column_name FROM information_schema.columns WHERE table_name='user' ORDER BY ordinal_position"
+        ).fetchall()]
 
         db.close()
         return {
-            "method": request.method,
-            "data": data,
-            "db_ok": True,
-            "user_count": count,
-            "has_is_admin_col": bool(
-                [c for c in db.execute_sql(
-                    "SELECT column_name FROM information_schema.columns WHERE table_name='user' AND column_name='is_admin'"
-                ).fetchall()]
-            )
+            "col_exists_before": col_exists,
+            "alter_result": alter_result,
+            "col_exists_after": col_exists_after,
+            "columns": columns,
+            "table": "user",
         }
     except Exception as e:
         return {"msg": f"Fail: {type(e).__name__}: {e}", "trace": traceback.format_exc()}, 500
