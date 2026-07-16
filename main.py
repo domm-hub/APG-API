@@ -372,8 +372,26 @@ def submit_request():
     if not data or not data.get("prompt"):
         return {"status": "error", "message": "Missing prompt."}, 400
 
+    # Extract name and phone from request body
+    name = data.get("name")
+    phone = data.get("phone")
+
+    # Save request (you can also extend RequestModel to store name/phone if needed)
     RequestModel.create(email=email, prompt=data["prompt"])
+
+    # Build admin notification
+    admin_message = (
+        f"New request received:\n"
+        f"Name: {name}\n"
+        f"Phone: {phone}\n"
+        f"Email: {email}"
+    )
+
+    # Send to admin (replace with your actual notification function)
+    send_to_admin(admin_message)
+
     return {"status": "success", "message": "Request saved."}, 200
+
 
 @app.route("/api/requests", methods=["GET"])
 def list_requests():
