@@ -31,7 +31,7 @@ def read_token(token):
 
 # Database Table Layout
 class User(Model):
-    username = CharField(unique=True, max_length=50)
+    username = CharField(unique=True, max_length=15)
     password_hash = CharField(max_length=255)
     verified = BooleanField(default=False)
     verification_code = CharField(max_length=10)
