@@ -21,4 +21,4 @@ with db:
     db.drop_tables([User])
     db.create_tables([User])
 
-print("💥 POOF. Database nuked.")
+print("💥 POOF. Database nuked. did you regret it? rethink your existance...")
