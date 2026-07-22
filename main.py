@@ -52,6 +52,7 @@ class RequestModel(Model):
     email = CharField(max_length=50)
     creator = ForeignKeyField(User, backref="requests", null=True)
     prompt = TextField()
+    type = CharField(max_length=20, default="request")
     status = CharField(max_length=20, default="pending")
     created_at = DateTimeField(default=datetime.now)
 
@@ -101,6 +102,7 @@ def _db_connect():
                 pass
         db.execute_sql('ALTER TABLE "requestmodel" ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT \'pending\';')
         db.execute_sql('ALTER TABLE "requestmodel" ADD COLUMN IF NOT EXISTS creator_id INTEGER REFERENCES "user"(id);')
+        db.execute_sql('ALTER TABLE "requestmodel" ADD COLUMN IF NOT EXISTS type VARCHAR(20) NOT NULL DEFAULT \'request\';')
     except Exception:
         pass
 
@@ -501,7 +503,11 @@ def submit_request():
     except User.DoesNotExist:
         user = None
 
-    RequestModel.create(email=email, prompt=data["prompt"], creator=user)
+    req_type = data.get("type", "request")
+    if req_type not in ("request", "challenge"):
+        req_type = "request"
+
+    RequestModel.create(email=email, prompt=data["prompt"], creator=user, type=req_type)
     return {"status": "success", "message": "Request saved."}, 200
 
 
@@ -529,6 +535,7 @@ def list_requests():
         "id": r.id,
         "email": r.email,
         "prompt": r.prompt,
+        "type": r.type,
         "status": r.status,
         "created_at": r.created_at.isoformat()
     } for r in requests])
@@ -608,6 +615,7 @@ def admin_requests():
         "id": r.id,
         "email": r.email,
         "prompt": r.prompt,
+        "type": r.type,
         "status": r.status,
         "creator_email": r.creator.username if r.creator else None,
         "creator_name": ((r.creator.firstName + " " + r.creator.lastName) if r.creator else None),
