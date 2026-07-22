@@ -393,6 +393,25 @@ def claim_admin():
     return {"status": "success", "message": "You are now admin!"}, 200
 
 
+ROASTS = [
+    "Your request is so vague, even ChatGPT gave up on it.",
+    "Bold of you to assume anyone read this.",
+    "Request submitted. Nobody was impressed.",
+    "Cool request. Too bad it's terrible.",
+    "Noted. Discarded. You're welcome.",
+    "I've seen better ideas on a sticky note.",
+    "Thanks for sharing. I wish I could un-read it.",
+    "Your request has been received and immediately judged.",
+    "Filed under: things nobody asked for.",
+    "Wow. That's... certainly a request.",
+    "I showed this to my dog. He left the room.",
+    "Request logged. Dignity not found.",
+    "This request has the energy of a wet sock.",
+    "Congrats, you've invented a new kind of bad idea.",
+    "On a scale of 1 to 10, this is a solid negative 3.",
+]
+
+
 @app.route("/api/requests", methods=["POST"])
 def submit_request():
     auth = request.headers.get("Authorization", "")
@@ -408,7 +427,7 @@ def submit_request():
         return {"status": "error", "message": "Missing prompt."}, 400
 
     RequestModel.create(email=email, prompt=data["prompt"])
-    return {"status": "success", "message": "Request saved."}, 200
+    return {"status": "success", "message": "Request saved.", "roast": random.choice(ROASTS)}, 200
 
 
 @app.route("/api/requests", methods=["GET"])
