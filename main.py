@@ -76,6 +76,11 @@ except Exception as e:
 def _db_connect():
     try:
         db.connect()
+        db.execute_sql('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT false;')
+        db.execute_sql("ALTER TABLE \"user\" ADD COLUMN IF NOT EXISTS firstName VARCHAR(255) NOT NULL DEFAULT '';")
+        db.execute_sql("ALTER TABLE \"user\" ADD COLUMN IF NOT EXISTS lastName VARCHAR(255) NOT NULL DEFAULT '';")
+        db.execute_sql('ALTER TABLE "requestmodel" ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT \'pending\';')
+        db.execute_sql('ALTER TABLE "requestmodel" ADD COLUMN IF NOT EXISTS creator_id INTEGER REFERENCES "user"(id);')
     except Exception:
         pass
 
