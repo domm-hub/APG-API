@@ -30,7 +30,7 @@ def read_token(token):
 
 # Database
 DB_URL = os.environ.get('DATABASE_URL')
-db = PostgresqlDatabase(DB_URL)
+db = PostgresqlDatabase(DB_URL) if DB_URL else None
 SMTP_FROM = "adam.afify13@gmail.com"
 
 
@@ -59,41 +59,37 @@ class RequestModel(Model):
 
 
 # Table Engine Initialization Loop
-try:
-    db.connect(reuse_if_open=True)
-    db.create_tables([User, RequestModel])
-    db.execute_sql("ALTER TABLE \"user\" ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT false;")
-    db.execute_sql("ALTER TABLE \"user\" ADD COLUMN IF NOT EXISTS firstName VARCHAR(255) NOT NULL DEFAULT '';")
-    db.execute_sql("ALTER TABLE \"user\" ADD COLUMN IF NOT EXISTS lastName VARCHAR(255) NOT NULL DEFAULT '';")
-    db.execute_sql('ALTER TABLE "requestmodel" ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT \'pending\';')
-    db.execute_sql('ALTER TABLE "requestmodel" ADD COLUMN IF NOT EXISTS creator_id INTEGER REFERENCES "user"(id);')
-    db.close()
-except Exception as e:
-    print(f"[startup] DB init failed (will retry per request): {e}")
+if db:
+    try:
+        db.connect(reuse_if_open=True)
+        db.create_tables([User, RequestModel])
+        db.close()
+    except Exception as e:
+        print(f"[startup] DB init failed (will retry per request): {e}")
 
 
 @app.before_request
 def _db_connect():
+    if not db:
+        return
     try:
         db.connect()
         db.execute_sql('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT false;')
-        # Fix case-mismatch: DB has "firstname"/"lastname" but Peewee expects "firstName"/"lastName"
         try:
             db.execute_sql('ALTER TABLE "user" RENAME COLUMN "firstname" TO "firstName";')
         except Exception:
-            pass
+            try:
+                db.execute_sql('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "firstName" VARCHAR(255) NOT NULL DEFAULT \'\';')
+            except Exception:
+                pass
         try:
             db.execute_sql('ALTER TABLE "user" RENAME COLUMN "lastname" TO "lastName";')
         except Exception:
-            pass
-        try:
-            db.execute_sql('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "firstName" VARCHAR(255) NOT NULL DEFAULT \'\';')
-        except Exception:
-            pass
-        try:
-            db.execute_sql('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "lastName" VARCHAR(255) NOT NULL DEFAULT \'\';')
-        except Exception:
-            pass        db.execute_sql('ALTER TABLE "requestmodel" ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT \'pending\';')
+            try:
+                db.execute_sql('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "lastName" VARCHAR(255) NOT NULL DEFAULT \'\';')
+            except Exception:
+                pass
+        db.execute_sql('ALTER TABLE "requestmodel" ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT \'pending\';')
         db.execute_sql('ALTER TABLE "requestmodel" ADD COLUMN IF NOT EXISTS creator_id INTEGER REFERENCES "user"(id);')
     except Exception:
         pass
@@ -101,11 +97,12 @@ def _db_connect():
 
 @app.after_request
 def _db_close(response):
-    try:
-        if not db.is_closed():
-            db.close()
-    except Exception:
-        pass
+    if db:
+        try:
+            if not db.is_closed():
+                db.close()
+        except Exception:
+            pass
     return response
 
 
