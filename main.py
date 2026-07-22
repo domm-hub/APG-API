@@ -15,7 +15,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", os.urandom(24).hex())
-CORS(app, origins=["https://hamzaahmedcollab.github.io"], supports_credentials=True)
+CORS(app, origins=["https://hamzaahmedcollab.github.io", "https://apg-two.vercel.app"], supports_credentials=True)
 
 # Token setup
 token_serializer = URLSafeTimedSerializer(app.secret_key, salt="auth")
