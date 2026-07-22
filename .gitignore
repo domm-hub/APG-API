@@ -1,8 +1,1 @@
 __pycache__/
-session_cookie.txt
-cookies.txt
-*.db
-.env
-
-.vercel
-.env*

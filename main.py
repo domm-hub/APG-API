@@ -5,8 +5,7 @@ from email.message import EmailMessage
 from flask import Flask, request, jsonify, make_response
 from flask_cors import CORS
 from werkzeug.security import generate_password_hash, check_password_hash
-from itsdangerous import URLSafeTimedSerializer
-from peewee import PostgresqlDatabase, Model, CharField, TextField, DateTimeField, IntegrityError, BooleanField
+from peewee import IntegrityError
 from datetime import datetime, timezone
 
 app = Flask(__name__)
@@ -14,6 +13,7 @@ app.secret_key = os.environ.get("SECRET_KEY", os.urandom(24).hex())
 CORS(app, origins=["https://hamzaahmedcollab.github.io"], supports_credentials=True)
 
 from structs import *
+init_app(app)
 
 # Table Engine Initialization Loop
 try:
