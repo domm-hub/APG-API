@@ -13,41 +13,7 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", os.urandom(24).hex())
 CORS(app, origins=["https://hamzaahmedcollab.github.io"], supports_credentials=True)
 
-token_serializer = URLSafeTimedSerializer(app.secret_key, salt="auth")
-TOKEN_EXPIRY = 86400 * 7  # 7 days
-ADMIN_PASSWORD_HASH = os.environ.get("ADMIN_PASSWORD_HASH", "scrypt:32768:8:1$cbOQrgRcvYvBZvJJ$a4c09673c7a4a1f16f5c40555d6da7e34d6231c57fbd32e43af045b8a8e05db3b9ce3a2ee9372d91dd35cf74b97ed60f76d5809d02db26e74343643a55199db8")
-
-# Core Environment Initializations
-DB_URL = os.environ.get('DATABASE_URL')
-db = PostgresqlDatabase(DB_URL)
-
-SMTP_FROM = "adam.afify13@gmail.com"
-
-def make_token(email):
-    return token_serializer.dumps(email)
-
-def read_token(token):
-    return token_serializer.loads(token, max_age=TOKEN_EXPIRY)
-
-# Database Table Layout
-class User(Model):
-    username = CharField(unique=True, max_length=15)
-    password_hash = CharField(max_length=255)
-    verified = BooleanField(default=False)
-    verification_code = CharField(max_length=10)
-    is_admin = BooleanField(default=False)
-
-    class Meta:
-        database = db
-
-class RequestModel(Model):
-    email = CharField(max_length=50)
-    prompt = TextField()
-    status = CharField(max_length=20, default="pending")
-    created_at = DateTimeField(default=datetime.now)
-
-    class Meta:
-        database = db
+from structs import *
 
 # Table Engine Initialization Loop
 try:
@@ -65,9 +31,14 @@ def _db_connect():
         db.connect()
         db.execute_sql("""
             ALTER TABLE "user" ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT false
+            ALTER TABLE "user" ADD COLUMN IF NOT EXISTS firstName VARCHAR(255) NOT NULL DEFAULT '';
+            ALTER TABLE "user" ADD COLUMN IF NOT EXISTS lastName  VARCHAR(255) NOT NULL DEFAULT '';
         """)
         db.execute_sql("""
             ALTER TABLE "requestmodel" ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'pending'
+        """)
+        db.execute_sql("""
+            ALTER TABLE "requestmodel" ADD COLUMN IF NOT EXISTS creator_id INTEGER REFERENCES "user"(id)
         """)
     except Exception:
         pass
@@ -223,11 +194,18 @@ def handleSignUp():
     if not email or not password or not firstName or not lastName or not phoneNumber:
         return {"status": "error", "message": "Missing fields."}, 400
 
+    if len(firstName) > 255 or len(lastName) > 255:
+        return {"status": "error", "message": "Firstname or last name too long."}, 400
+
+    if len(username) > 255:
+        return {"status": "error", "message"; "Username too long."}, 400
+
+    
     hashed_password = generate_password_hash(password)
 
     try:
         code = genCode()
-        newUser = User.create(username=email, password_hash=hashed_password, verified=False, verification_code=code)
+        newUser = User.create(username=email, password_hash=hashed_password, verified=False, verification_code=code, firstName=firstName, lastName=lastName)
         send_email(email, code)
         return {"status": "success", "message": "User created successfully. Verify email to get access."}, 200
     except IntegrityError:
@@ -372,25 +350,8 @@ def submit_request():
     if not data or not data.get("prompt"):
         return {"status": "error", "message": "Missing prompt."}, 400
 
-    name = data.get("name")
-    phone = data.get("phone")
-
-  
     RequestModel.create(email=email, prompt=data["prompt"])
-
-    
-    admin_message = (
-        f"New request received:\n"
-        f"Name: {name}\n"
-        f"Phone: {phone}\n"
-        f"Email: {email}"
-    )
-
-   
-    send_to_admin(admin_message)
-
     return {"status": "success", "message": "Request saved."}, 200
-
 
 @app.route("/api/requests", methods=["GET"])
 def list_requests():
