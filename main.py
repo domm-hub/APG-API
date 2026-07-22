@@ -1,47 +1,84 @@
 import os
 import random
 import smtplib
+from datetime import datetime, timezone
 from email.message import EmailMessage
+
 from flask import Flask, request, jsonify, make_response
 from flask_cors import CORS
+from itsdangerous import URLSafeTimedSerializer
+from peewee import (
+    PostgresqlDatabase, Model, CharField, TextField,
+    DateTimeField, IntegrityError, BooleanField, ForeignKeyField,
+)
 from werkzeug.security import generate_password_hash, check_password_hash
-from peewee import IntegrityError
-from datetime import datetime, timezone
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", os.urandom(24).hex())
 CORS(app, origins=["https://hamzaahmedcollab.github.io"], supports_credentials=True)
 
-from structs import *
-init_app(app)
+# Token setup
+token_serializer = URLSafeTimedSerializer(app.secret_key, salt="auth")
+TOKEN_EXPIRY = 86400 * 7
+ADMIN_PASSWORD_HASH = os.environ.get("ADMIN_PASSWORD_HASH", "scrypt:32768:8:1$cbOQrgRcvYvBZvJJ$a4c09673c7a4a1f16f5c40555d6da7e34d6231c57fbd32e43af045b8a8e05db3b9ce3a2ee9372d91dd35cf74b97ed60f76d5809d02db26e74343643a55199db8")
+
+def make_token(email):
+    return token_serializer.dumps(email)
+
+def read_token(token):
+    return token_serializer.loads(token, max_age=TOKEN_EXPIRY)
+
+# Database
+DB_URL = os.environ.get('DATABASE_URL')
+db = PostgresqlDatabase(DB_URL)
+SMTP_FROM = "adam.afify13@gmail.com"
+
+
+class User(Model):
+    firstName = CharField()
+    lastName = CharField()
+    username = CharField(unique=True, max_length=50)
+    password_hash = CharField(max_length=255)
+    verified = BooleanField(default=False)
+    verification_code = CharField(max_length=10)
+    is_admin = BooleanField(default=False)
+
+    class Meta:
+        database = db
+
+
+class RequestModel(Model):
+    email = CharField(max_length=50)
+    creator = ForeignKeyField(User, backref="requests", null=True)
+    prompt = TextField()
+    status = CharField(max_length=20, default="pending")
+    created_at = DateTimeField(default=datetime.now)
+
+    class Meta:
+        database = db
+
 
 # Table Engine Initialization Loop
 try:
     db.connect(reuse_if_open=True)
     db.create_tables([User, RequestModel])
-    db.execute_sql("ALTER TABLE user ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT false;")
+    db.execute_sql("ALTER TABLE \"user\" ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT false;")
+    db.execute_sql("ALTER TABLE \"user\" ADD COLUMN IF NOT EXISTS firstName VARCHAR(255) NOT NULL DEFAULT '';")
+    db.execute_sql("ALTER TABLE \"user\" ADD COLUMN IF NOT EXISTS lastName VARCHAR(255) NOT NULL DEFAULT '';")
+    db.execute_sql('ALTER TABLE "requestmodel" ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT \'pending\';')
+    db.execute_sql('ALTER TABLE "requestmodel" ADD COLUMN IF NOT EXISTS creator_id INTEGER REFERENCES "user"(id);')
     db.close()
 except Exception as e:
     print(f"[startup] DB init failed (will retry per request): {e}")
 
-# Optimizing Neon Database connection pools per request
+
 @app.before_request
 def _db_connect():
     try:
         db.connect()
-        db.execute_sql("""
-            ALTER TABLE "user" ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT false
-            ALTER TABLE "user" ADD COLUMN IF NOT EXISTS firstName VARCHAR(255) NOT NULL DEFAULT '';
-            ALTER TABLE "user" ADD COLUMN IF NOT EXISTS lastName  VARCHAR(255) NOT NULL DEFAULT '';
-        """)
-        db.execute_sql("""
-            ALTER TABLE "requestmodel" ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT 'pending'
-        """)
-        db.execute_sql("""
-            ALTER TABLE "requestmodel" ADD COLUMN IF NOT EXISTS creator_id INTEGER REFERENCES "user"(id)
-        """)
     except Exception:
         pass
+
 
 @app.after_request
 def _db_close(response):
@@ -52,9 +89,10 @@ def _db_close(response):
         pass
     return response
 
-# Numeric unique token algorithm 
+
 def genCode():
     return "".join([str(random.randint(0, 9)) for i in range(4)])
+
 
 email_html_body = """
 <!DOCTYPE html>
@@ -140,7 +178,7 @@ email_html_body = """
 <body>
     <div class="wrapper">
         <div class="container">
-            <div class="logo">🛠️ Our Space</div>
+            <div class="logo">Our Space</div>
             <h1>Hey there!</h1>
             <p>Welcome to the portal. Drop the 4-digit activation code below into the confirmation screen to unlock your account.</p>
             <div class="pin-box">
@@ -156,6 +194,7 @@ email_html_body = """
 </body>
 </html>
 """
+
 
 def send_email(to, code):
     msg = EmailMessage()
@@ -174,21 +213,22 @@ def send_email(to, code):
         s.login(os.environ.get("SMTP_LOGIN"), os.environ.get("SMTP_PASSWORD"))
         s.send_message(msg)
 
+
 @app.route("/api/health", methods=["GET"])
 def health():
     return {"status": "ok"}
 
-# Endpoint 1: Registration and Token Mailer Outbound
+
 @app.route("/api/signup", methods=["POST"])
 def handleSignUp():
     data = request.get_json()
     if not data:
         return {"status": "error", "message": "Missing JSON payload"}, 400
 
-    email       = data.get("email")
-    password    = data.get("password")
-    firstName   = data.get("firstname")
-    lastName    = data.get("lastname")
+    email = data.get("email")
+    password = data.get("password")
+    firstName = data.get("firstname")
+    lastName = data.get("lastname")
     phoneNumber = data.get("phonenumber")
 
     if not email or not password or not firstName or not lastName or not phoneNumber:
@@ -197,21 +237,17 @@ def handleSignUp():
     if len(firstName) > 255 or len(lastName) > 255:
         return {"status": "error", "message": "Firstname or last name too long."}, 400
 
-    if len(username) > 255:
-        return {"status": "error", "message"; "Username too long."}, 400
-
-    
     hashed_password = generate_password_hash(password)
 
     try:
         code = genCode()
-        newUser = User.create(username=email, password_hash=hashed_password, verified=False, verification_code=code, firstName=firstName, lastName=lastName)
+        User.create(username=email, password_hash=hashed_password, verified=False, verification_code=code, firstName=firstName, lastName=lastName)
         send_email(email, code)
         return {"status": "success", "message": "User created successfully. Verify email to get access."}, 200
     except IntegrityError:
         return {"status": "error", "message": "Email is already taken"}, 400
 
-# Endpoint 2: Code Validation and Account Activation Check
+
 @app.route("/api/verify", methods=["POST"])
 def handleVerification():
     data = request.get_json()
@@ -228,15 +264,15 @@ def handleVerification():
         user = User.get(User.username == email)
         if user.verification_code == str(submitted_code):
             user.verified = True
-            user.verification_code = ""  
-            user.save()                 
+            user.verification_code = ""
+            user.save()
             return {"status": "success", "message": "Account verified successfully! You can now log in."}, 200
         else:
             return {"status": "error", "message": "Invalid verification code."}, 400
     except User.DoesNotExist:
         return {"status": "error", "message": "User not found."}, 404
 
-# Endpoint 2.5: Resend verification code
+
 @app.route("/api/resend-code", methods=["POST"])
 def handleResendCode():
     data = request.get_json()
@@ -260,15 +296,15 @@ def handleResendCode():
     except User.DoesNotExist:
         return {"status": "error", "message": "User not found."}, 404
 
-# Endpoint 3: Verified User Validation and Session Cookie Issuance
+
 @app.route("/api/login", methods=["POST"])
 def handleLogin():
     data = request.get_json()
     if not data:
         return {"status": "error", "message": "Missing JSON payload"}, 400
 
-    email       = data.get("email")
-    password    = data.get("password")
+    email = data.get("email")
+    password = data.get("password")
 
     if not email or not password:
         return {"status": "error", "message": "Missing fields."}, 400
@@ -289,6 +325,7 @@ def handleLogin():
         }, 200
     else:
         return {"status": "error", "message": "Invalid email or password"}, 401
+
 
 @app.route("/api/check-session", methods=["GET"])
 def check_session():
@@ -314,6 +351,7 @@ def check_session():
     except User.DoesNotExist:
         return {"status": "unauthenticated", "message": "User not found."}, 401
 
+
 @app.route("/api/claim-admin", methods=["POST"])
 def claim_admin():
     auth = request.headers.get("Authorization", "")
@@ -336,6 +374,7 @@ def claim_admin():
     user.save()
     return {"status": "success", "message": "You are now admin!"}, 200
 
+
 @app.route("/api/requests", methods=["POST"])
 def submit_request():
     auth = request.headers.get("Authorization", "")
@@ -352,6 +391,7 @@ def submit_request():
 
     RequestModel.create(email=email, prompt=data["prompt"])
     return {"status": "success", "message": "Request saved."}, 200
+
 
 @app.route("/api/requests", methods=["GET"])
 def list_requests():
@@ -381,7 +421,7 @@ def list_requests():
         "created_at": r.created_at.isoformat()
     } for r in requests])
 
-# Endpoint 6: Clear Client Authentication Session Cookie
+
 @app.route("/api/logout", methods=["POST"])
 def handleLogout():
     return {"status": "success", "message": "Logged out."}, 200
@@ -407,7 +447,8 @@ def require_admin():
 @app.route("/api/admin/stats", methods=["GET"])
 def admin_stats():
     user, err, code = require_admin()
-    if err: return err, code
+    if err:
+        return err, code
 
     return {
         "total_users": User.select().count(),
@@ -421,7 +462,8 @@ def admin_stats():
 @app.route("/api/admin/users", methods=["GET"])
 def admin_users():
     user, err, code = require_admin()
-    if err: return err, code
+    if err:
+        return err, code
 
     users = User.select().order_by(User.username)
     return jsonify([{
@@ -434,7 +476,8 @@ def admin_users():
 @app.route("/api/admin/users", methods=["DELETE"])
 def admin_delete_users():
     user, err, code = require_admin()
-    if err: return err, code
+    if err:
+        return err, code
 
     User.delete().execute()
     return {"status": "success", "message": "All users deleted."}, 200
@@ -443,7 +486,8 @@ def admin_delete_users():
 @app.route("/api/admin/requests", methods=["GET"])
 def admin_requests():
     user, err, code = require_admin()
-    if err: return err, code
+    if err:
+        return err, code
 
     reqs = RequestModel.select().order_by(RequestModel.created_at.desc())
     return jsonify([{
@@ -458,7 +502,8 @@ def admin_requests():
 @app.route("/api/admin/requests/<int:req_id>", methods=["DELETE"])
 def admin_delete_request(req_id):
     user, err, code = require_admin()
-    if err: return err, code
+    if err:
+        return err, code
 
     try:
         req = RequestModel.get(RequestModel.id == req_id)
@@ -471,7 +516,8 @@ def admin_delete_request(req_id):
 @app.route("/api/admin/requests/<int:req_id>/status", methods=["POST"])
 def admin_update_request_status(req_id):
     user, err, code = require_admin()
-    if err: return err, code
+    if err:
+        return err, code
 
     data = request.get_json()
     if not data or not data.get("status"):
@@ -493,15 +539,13 @@ def admin_update_request_status(req_id):
 @app.route("/api/admin/cleanup", methods=["POST"])
 def admin_cleanup():
     user, err, code = require_admin()
-    if err: return err, code
+    if err:
+        return err, code
 
     RequestModel.delete().execute()
     User.delete().execute()
     return {"status": "success", "message": "Everything deleted."}, 200
 
 
-application = app
-
 if __name__ == "__main__":
     app.run(debug=True)
-
