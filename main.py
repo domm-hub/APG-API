@@ -103,6 +103,15 @@ def _db_close(response):
                 db.close()
         except Exception:
             pass
+    if response.content_type and 'application/json' in response.content_type:
+        try:
+            import json
+            body = json.loads(response.get_data(as_text=True))
+            if isinstance(body, dict) and 'roast' not in body:
+                body['roast'] = random.choice(ROASTS)
+                response.set_data(json.dumps(body))
+        except Exception:
+            pass
     return response
 
 
@@ -337,7 +346,8 @@ def handleLogin():
         return {
             "status": "success",
             "message": f"Welcome back, {user.username}!",
-            "token": make_token(user.username)
+            "token": make_token(user.username),
+            "roast": random.choice(ROASTS)
         }, 200
     else:
         return {"status": "error", "message": "Invalid email or password"}, 401
