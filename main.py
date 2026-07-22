@@ -411,10 +411,19 @@ def update_profile():
     firstName = data.get("firstName")
     lastName = data.get("lastName")
     phone = data.get("phone")
+    new_password = data.get("new_password")
+    current_password = data.get("current_password")
 
-    if firstName:
+    if new_password:
+        if not current_password:
+            return {"status": "error", "message": "Current password required to set new password."}, 400
+        if not check_password_hash(user.password_hash, current_password):
+            return {"status": "error", "message": "Current password is incorrect."}, 401
+        user.password_hash = generate_password_hash(new_password)
+
+    if firstName is not None:
         user.firstName = firstName
-    if lastName:
+    if lastName is not None:
         user.lastName = lastName
     user.save()
 
