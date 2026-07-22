@@ -71,7 +71,7 @@ if db:
         cutoff = datetime.now(timezone.utc).timestamp() - 86400
         cutoff_dt = datetime.fromtimestamp(cutoff, tz=timezone.utc)
         User.delete().where(
-            (User.verified == False) & (User.created_at < cutoff_dt)
+            (User.verified == False) & ((User.created_at < cutoff_dt) | (User.created_at.is_null()))
         ).execute()
         db.close()
     except Exception as e:
@@ -387,6 +387,48 @@ def check_session():
         }, 200
     except User.DoesNotExist:
         return {"status": "unauthenticated", "message": "User not found."}, 401
+
+
+@app.route("/api/update-profile", methods=["PUT"])
+def update_profile():
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        return {"status": "error", "message": "Not authenticated."}, 401
+    try:
+        email = read_token(auth[7:])
+    except Exception:
+        return {"status": "error", "message": "Invalid token."}, 401
+
+    data = request.get_json()
+    if not data:
+        return {"status": "error", "message": "Missing JSON payload"}, 400
+
+    try:
+        user = User.get(User.username == email)
+    except User.DoesNotExist:
+        return {"status": "error", "message": "User not found."}, 401
+
+    firstName = data.get("firstName")
+    lastName = data.get("lastName")
+    phone = data.get("phone")
+
+    if firstName:
+        user.firstName = firstName
+    if lastName:
+        user.lastName = lastName
+    user.save()
+
+    return {
+        "status": "success",
+        "message": "Profile updated.",
+        "user": {
+            "email": user.username,
+            "firstName": user.firstName,
+            "lastName": user.lastName,
+            "verified": user.verified,
+            "is_admin": user.is_admin
+        }
+    }, 200
 
 
 @app.route("/api/claim-admin", methods=["POST"])
