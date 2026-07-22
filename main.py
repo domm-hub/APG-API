@@ -500,6 +500,8 @@ def admin_cleanup():
     return {"status": "success", "message": "Everything deleted."}, 200
 
 
+application = app
+
 if __name__ == "__main__":
     app.run(debug=True)
 
