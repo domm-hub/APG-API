@@ -344,6 +344,8 @@ def check_session():
             "status": "authenticated",
             "user": {
                 "email": user.username,
+                "firstName": user.firstName,
+                "lastName": user.lastName,
                 "verified": user.verified,
                 "is_admin": user.is_admin
             }
@@ -468,6 +470,8 @@ def admin_users():
     users = User.select().order_by(User.username)
     return jsonify([{
         "email": u.username,
+        "firstName": u.firstName,
+        "lastName": u.lastName,
         "verified": u.verified,
         "is_admin": u.is_admin,
     } for u in users])
@@ -495,6 +499,7 @@ def admin_requests():
         "email": r.email,
         "prompt": r.prompt,
         "status": r.status,
+        "creator_email": r.creator.username if r.creator else None,
         "created_at": r.created_at.isoformat()
     } for r in reqs])
 
