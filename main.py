@@ -42,6 +42,7 @@ class User(Model):
     verified = BooleanField(default=False)
     verification_code = CharField(max_length=10)
     is_admin = BooleanField(default=False)
+    created_at = DateTimeField(default=datetime.now)
 
     class Meta:
         database = db
@@ -63,6 +64,15 @@ if db:
     try:
         db.connect(reuse_if_open=True)
         db.create_tables([User, RequestModel])
+        try:
+            db.execute_sql('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();')
+        except Exception:
+            pass
+        cutoff = datetime.now(timezone.utc).timestamp() - 86400
+        cutoff_dt = datetime.fromtimestamp(cutoff, tz=timezone.utc)
+        User.delete().where(
+            (User.verified == False) & (User.created_at < cutoff_dt)
+        ).execute()
         db.close()
     except Exception as e:
         print(f"[startup] DB init failed (will retry per request): {e}")
@@ -103,12 +113,12 @@ def _db_close(response):
                 db.close()
         except Exception:
             pass
-    if response.content_type and 'application/json' in response.content_type:
+    if request.method == "GET" and request.path != "/api/login" and response.content_type and "application/json" in response.content_type:
         try:
             import json
             body = json.loads(response.get_data(as_text=True))
-            if isinstance(body, dict) and 'roast' not in body:
-                body['roast'] = random.choice(ROASTS)
+            if isinstance(body, dict):
+                body["roast"] = random.choice(ROASTS)
                 response.set_data(json.dumps(body))
         except Exception:
             pass
@@ -346,8 +356,7 @@ def handleLogin():
         return {
             "status": "success",
             "message": f"Welcome back, {user.username}!",
-            "token": make_token(user.username),
-            "roast": random.choice(ROASTS)
+            "token": make_token(user.username)
         }, 200
     else:
         return {"status": "error", "message": "Invalid email or password"}, 401
@@ -436,8 +445,13 @@ def submit_request():
     if not data or not data.get("prompt"):
         return {"status": "error", "message": "Missing prompt."}, 400
 
-    RequestModel.create(email=email, prompt=data["prompt"])
-    return {"status": "success", "message": "Request saved.", "roast": random.choice(ROASTS)}, 200
+    try:
+        user = User.get(User.username == email)
+    except User.DoesNotExist:
+        user = None
+
+    RequestModel.create(email=email, prompt=data["prompt"], creator=user)
+    return {"status": "success", "message": "Request saved."}, 200
 
 
 @app.route("/api/requests", methods=["GET"])
@@ -545,6 +559,7 @@ def admin_requests():
         "prompt": r.prompt,
         "status": r.status,
         "creator_email": r.creator.username if r.creator else None,
+        "creator_name": ((r.creator.firstName + " " + r.creator.lastName) if r.creator else None),
         "created_at": r.created_at.isoformat()
     } for r in reqs])
 
