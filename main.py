@@ -587,11 +587,28 @@ def admin_users():
     users = User.select().order_by(User.username)
     return jsonify([{
         "email": u.username,
+        "id": u.id,
         "firstName": u.firstName,
         "lastName": u.lastName,
         "verified": u.verified,
         "is_admin": u.is_admin,
     } for u in users])
+
+
+@app.route("/api/admin/users/<email>", methods=["DELETE"])
+def admin_delete_user(email):
+    admin, err, code = require_admin()
+    if err:
+        return err, code
+
+    try:
+        user = User.get(User.username == email)
+        if user.is_admin:
+            return {"status": "error", "message": "Cannot delete admin users."}, 403
+        user.delete_instance()
+        return {"status": "success", "message": "User deleted."}, 200
+    except User.DoesNotExist:
+        return {"status": "error", "message": "User not found."}, 404
 
 
 @app.route("/api/admin/users", methods=["DELETE"])
