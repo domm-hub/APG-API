@@ -1,0 +1,11 @@
+{
+  "remoteName": "origin",
+  "projects": [
+    {
+      "id": "prj_N8pRiBjtbrg4ZzoebtP9Rh0Wb6u0",
+      "name": "apg-api",
+      "directory": ".",
+      "orgId": "team_95TzH1DRoKzwTwgZUYtjjoEW"
+    }
+  ]
+}
