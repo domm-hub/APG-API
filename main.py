@@ -251,6 +251,7 @@ def send_email(to, code):
 
     # 3. Connect securely via Port 587
     with smtplib.SMTP(smtp_host, 587) as s:
+        s.set_debuglevel(1)
         s.starttls()  # Securely upgrades the connection to TLS encryption
         s.login(smtp_login, smtp_password)
         s.send_message(msg)
