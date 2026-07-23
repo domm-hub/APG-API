@@ -234,20 +234,25 @@ email_html_body = """
 
 
 def send_email(to, code):
+    # 1. Build the email message
     msg = EmailMessage()
-    msg["From"] = SMTP_FROM
+    msg["From"] = os.environ.get("SMTP_FROM")
     msg["To"] = to
     msg["Subject"] = "Verify your email"
     msg.set_content(f"Your verification code is: {code}")
+    
+    # Ensure email_html_body is imported/defined globally in your file
     msg.add_alternative(email_html_body.format(secret_pin=code), subtype="html")
-    port = int(os.environ.get("SMTP_PORT", 587))
-    if port == 465:
-        s = smtplib.SMTP_SSL("smtp-relay.brevo.com", port)
-    else:
-        s = smtplib.SMTP("smtp-relay.brevo.com", port)
-        s.starttls()
-    with s:
-        s.login(os.environ.get("SMTP_LOGIN"), os.environ.get("SMTP_PASSWORD"))
+    
+    # 2. Extract environment credentials
+    smtp_host = os.environ.get("SMTP_HOST", "://gmail.com")
+    smtp_login = os.environ.get("SMTP_LOGIN")
+    smtp_password = os.environ.get("SMTP_PASSWORD")
+
+    # 3. Connect securely via Port 587
+    with smtplib.SMTP(smtp_host, 587) as s:
+        s.starttls()  # Securely upgrades the connection to TLS encryption
+        s.login(smtp_login, smtp_password)
         s.send_message(msg)
 
 
