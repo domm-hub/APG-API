@@ -103,8 +103,38 @@ def _db_connect():
         db.execute_sql('ALTER TABLE "requestmodel" ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT \'pending\';')
         db.execute_sql('ALTER TABLE "requestmodel" ADD COLUMN IF NOT EXISTS creator_id INTEGER REFERENCES "user"(id);')
         db.execute_sql('ALTER TABLE "requestmodel" ADD COLUMN IF NOT EXISTS type VARCHAR(20) NOT NULL DEFAULT \'request\';')
+        db.execute_sql('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS resend_count INTEGER NOT NULL DEFAULT 0;')
     except Exception:
         pass
+
+@app.after_request
+def inject_action_field(response):
+    # 1. Only process if the response is JSON
+    if response.is_json:
+        try:
+            data = response.get_json()
+            
+            # Scenario A: Response is a standard JSON Object {}
+            if isinstance(data, dict):
+                # Use setdefault to apply "none" only if the key doesn't exist
+                data.setdefault("action", "none")
+            
+            # Scenario B: Response is a JSON Array []
+            elif isinstance(data, list):
+                # Inject the field into every object inside the array
+                for item in data:
+                    if isinstance(item, dict):
+                        item.setdefault("action", "none")
+            
+            # 2. Save the modified payload back to the response
+            response.set_json(data)
+            
+        except Exception as e:
+            print(f"Error injecting action field: {e}", flush=True)
+            
+    # 3. Always return the response
+    return response
+
 
 
 @app.after_request
@@ -331,8 +361,12 @@ def handleResendCode():
         if user.verified:
             return {"status": "error", "message": "Account already verified."}, 400
 
+        if user.resend_count >= 5:
+            return {"status": "error", "message": "Resend limit reached. Please contact support."}, 429
+
         new_code = genCode()
         user.verification_code = new_code
+        user.resend_count += 1
         user.save()
         send_email(email, new_code)
         return {"status": "success", "message": "Verification code resent."}, 200
@@ -359,7 +393,7 @@ def handleLogin():
 
     if check_password_hash(user.password_hash, password):
         if not user.verified:
-            return {"status": "error", "message": "Please verify your email address first."}, 401
+            return {"status": "error", "message": "Please verify your email address first.", "action": "verify"}, 401
 
         return {
             "status": "success",

@@ -4,7 +4,7 @@ from datetime import datetime
 from itsdangerous import URLSafeTimedSerializer
 from peewee import (
     PostgresqlDatabase, Model, CharField, TextField,
-    DateTimeField, BooleanField, ForeignKeyField,
+    DateTimeField, BooleanField, ForeignKeyField, IntegerField,
 )
 
 # Core Environment Initializations
@@ -41,6 +41,7 @@ class User(Model):
     verified = BooleanField(default=False)
     verification_code = CharField(max_length=10)
     is_admin = BooleanField(default=False)
+    resend_count = IntegerField(default=0)
 
     class Meta:
         database = db
