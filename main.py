@@ -851,6 +851,33 @@ def admin_update_request_status(req_id):
         return {"status": "error", "message": "Request not found."}, 404
 
 
+@app.route("/api/admin/give-coins", methods=["POST"])
+def admin_give_coins():
+    admin, err, code = require_admin()
+    if err:
+        return err, code
+
+    data = request.get_json()
+    if not data or not data.get("email") or data.get("amount") is None:
+        return {"status": "error", "message": "Missing email or amount."}, 400
+
+    amount = data["amount"]
+    if not isinstance(amount, int) or amount <= 0:
+        return {"status": "error", "message": "Amount must be a positive integer."}, 400
+
+    try:
+        user = User.get(User.username == data["email"])
+    except User.DoesNotExist:
+        return {"status": "error", "message": "User not found."}, 404
+
+    with db.atomic():
+        user = User.select().where(User.id == user.id).for_update().get()
+        user.coins += amount
+        user.save()
+
+    return {"status": "success", "message": f"Gave {amount} coins to {data['email']}.", "coins": user.coins}, 200
+
+
 @app.route("/api/admin/cleanup", methods=["POST"])
 def admin_cleanup():
     user, err, code = require_admin()
