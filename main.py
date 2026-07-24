@@ -1,6 +1,7 @@
 import os
 import random
 import smtplib
+import secrets
 from datetime import datetime, timezone
 from email.message import EmailMessage
 
@@ -10,6 +11,7 @@ from itsdangerous import URLSafeTimedSerializer
 from peewee import (
     PostgresqlDatabase, Model, CharField, TextField,
     DateTimeField, IntegrityError, BooleanField, ForeignKeyField,
+    IntegerField,
 )
 from werkzeug.security import generate_password_hash, check_password_hash
 
@@ -42,6 +44,7 @@ class User(Model):
     verified = BooleanField(default=False)
     verification_code = CharField(max_length=10)
     is_admin = BooleanField(default=False)
+    coins = IntegerField(default=0)
     created_at = DateTimeField(default=datetime.now)
 
     class Meta:
@@ -60,13 +63,30 @@ class RequestModel(Model):
         database = db
 
 
+class Invite(Model):
+    code = CharField(unique=True, max_length=32)
+    creator = ForeignKeyField(User, backref="invites")
+    uses = IntegerField(default=0)
+    max_uses = IntegerField(default=10)
+    created_at = DateTimeField(default=datetime.now)
+
+    class Meta:
+        database = db
+
+
 # Table Engine Initialization Loop
 if db:
     try:
         db.connect(reuse_if_open=True)
-        db.create_tables([User, RequestModel])
+        db.create_tables([User, RequestModel, Invite])
         try:
             db.execute_sql('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW();')
+        except Exception:
+            pass
+        try:
+            db.execute_sql('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS coins INTEGER NOT NULL DEFAULT 0;')
+            db.execute_sql('ALTER TABLE "invite" ADD COLUMN IF NOT EXISTS uses INTEGER NOT NULL DEFAULT 0;')
+            db.execute_sql('ALTER TABLE "invite" ADD COLUMN IF NOT EXISTS max_uses INTEGER NOT NULL DEFAULT 10;')
         except Exception:
             pass
         cutoff = datetime.now(timezone.utc).timestamp() - 86400
@@ -104,6 +124,9 @@ def _db_connect():
         db.execute_sql('ALTER TABLE "requestmodel" ADD COLUMN IF NOT EXISTS creator_id INTEGER REFERENCES "user"(id);')
         db.execute_sql('ALTER TABLE "requestmodel" ADD COLUMN IF NOT EXISTS type VARCHAR(20) NOT NULL DEFAULT \'request\';')
         db.execute_sql('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS resend_count INTEGER NOT NULL DEFAULT 0;')
+        db.execute_sql('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS coins INTEGER NOT NULL DEFAULT 0;')
+        db.execute_sql('ALTER TABLE "invite" ADD COLUMN IF NOT EXISTS uses INTEGER NOT NULL DEFAULT 0;')
+        db.execute_sql('ALTER TABLE "invite" ADD COLUMN IF NOT EXISTS max_uses INTEGER NOT NULL DEFAULT 10;')
     except Exception:
         pass
 
@@ -303,6 +326,7 @@ def handleSignUp():
     firstName = data.get("firstname")
     lastName = data.get("lastname")
     phoneNumber = data.get("phonenumber")
+    invite_code = (data.get("invite_code") or "").strip()
 
     if not email or not password or not firstName or not lastName or not phoneNumber:
         return {"status": "error", "message": "Missing fields."}, 400
@@ -314,9 +338,36 @@ def handleSignUp():
 
     try:
         code = genCode()
-        User.create(username=email, password_hash=hashed_password, verified=False, verification_code=code, firstName=firstName, lastName=lastName)
+        with db.atomic():
+            invite = None
+            starting_coins = 0
+            if invite_code:
+                try:
+                    invite = Invite.select().where(Invite.code == invite_code).for_update().get()
+                except Invite.DoesNotExist:
+                    return {"status": "error", "message": "Invite link is invalid."}, 400
+                if invite.uses >= invite.max_uses:
+                    return {"status": "error", "message": "Invite link has reached its 10-person limit."}, 400
+                starting_coins = 20
+
+            User.create(
+                username=email,
+                password_hash=hashed_password,
+                verified=False,
+                verification_code=code,
+                firstName=firstName,
+                lastName=lastName,
+                coins=starting_coins,
+            )
+            if invite:
+                User.update(coins=User.coins + 20).where(User.id == invite.creator_id).execute()
+                Invite.update(uses=Invite.uses + 1).where(Invite.id == invite.id).execute()
         send_email(email, code)
-        return {"status": "success", "message": "User created successfully. Verify email to get access."}, 200
+        return {
+            "status": "success",
+            "message": "User created successfully. Verify email to get access.",
+            "invite_reward": bool(invite_code),
+        }, 200
     except IntegrityError:
         return {"status": "error", "message": "Email is already taken"}, 400
 
@@ -424,11 +475,51 @@ def check_session():
                 "firstName": user.firstName,
                 "lastName": user.lastName,
                 "verified": user.verified,
-                "is_admin": user.is_admin
+                "is_admin": user.is_admin,
+                "coins": None if user.is_admin else user.coins,
+                "coins_infinite": user.is_admin,
             }
         }, 200
     except User.DoesNotExist:
         return {"status": "unauthenticated", "message": "User not found."}, 401
+
+
+def authenticated_user():
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        return None, {"status": "error", "message": "Not authenticated."}, 401
+    try:
+        email = read_token(auth[7:])
+        return User.get(User.username == email), None, None
+    except (Exception, User.DoesNotExist):
+        return None, {"status": "error", "message": "Invalid or expired token."}, 401
+
+
+@app.route("/api/invites", methods=["GET", "POST"])
+def invites():
+    user, error, code = authenticated_user()
+    if error:
+        return error, code
+
+    if request.method == "POST":
+        invite = Invite.create(code=secrets.token_urlsafe(12), creator=user)
+        base_url = os.environ.get("FRONTEND_URL", "https://apg-two.vercel.app").rstrip("/")
+        return {
+            "status": "success",
+            "invite": {
+                "code": invite.code,
+                "link": f"{base_url}/signup.html?invite={invite.code}",
+                "uses": invite.uses,
+                "max_uses": invite.max_uses,
+            },
+        }, 201
+
+    return jsonify([{
+        "code": invite.code,
+        "link": f"{os.environ.get('FRONTEND_URL', 'https://apg-two.vercel.app').rstrip('/')}/signup.html?invite={invite.code}",
+        "uses": invite.uses,
+        "max_uses": invite.max_uses,
+    } for invite in Invite.select().where(Invite.creator == user).order_by(Invite.created_at.desc())])
 
 
 @app.route("/api/update-profile", methods=["PUT"])
@@ -547,8 +638,26 @@ def submit_request():
     if req_type not in ("request", "challenge"):
         req_type = "request"
 
-    RequestModel.create(email=email, prompt=data["prompt"], creator=user, type=req_type)
-    return {"status": "success", "message": "Request saved."}, 200
+    website_cost = 50
+    with db.atomic():
+        user = User.select().where(User.id == user.id).for_update().get()
+        if req_type == "request" and not user.is_admin:
+            if user.coins < website_cost:
+                return {
+                    "status": "error",
+                    "message": f"You need {website_cost} coins to request a website. You have {user.coins}.",
+                }, 402
+            user.coins -= website_cost
+            user.save()
+
+        RequestModel.create(email=email, prompt=data["prompt"], creator=user, type=req_type)
+
+    return {
+        "status": "success",
+        "message": "Request saved.",
+        "coins": None if user.is_admin else user.coins,
+        "coins_infinite": user.is_admin,
+    }, 200
 
 
 @app.route("/api/requests", methods=["GET"])
@@ -632,6 +741,8 @@ def admin_users():
         "lastName": u.lastName,
         "verified": u.verified,
         "is_admin": u.is_admin,
+        "coins": None if u.is_admin else u.coins,
+        "coins_infinite": u.is_admin,
     } for u in users])
 
 
