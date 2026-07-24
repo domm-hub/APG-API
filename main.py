@@ -596,6 +596,29 @@ def claim_admin():
     return {"status": "success", "message": "You are now admin!"}, 200
 
 
+@app.route("/api/remove-admin", methods=["POST"])
+def remove_admin():
+    auth = request.headers.get("Authorization", "")
+    if not auth.startswith("Bearer "):
+        return {"status": "error", "message": "Not authenticated."}, 401
+    try:
+        email = read_token(auth[7:])
+    except Exception:
+        return {"status": "error", "message": "Invalid token."}, 401
+
+    data = request.get_json()
+    if not data or not data.get("password"):
+        return {"status": "error", "message": "Missing password."}, 400
+
+    if not check_password_hash(ADMIN_PASSWORD_HASH, data["password"]):
+        return {"status": "error", "message": "Wrong password."}, 401
+
+    user = User.get(User.username == email)
+    user.is_admin = False
+    user.save()
+    return {"status": "success", "message": "Admin status removed."}, 200
+
+
 ROASTS = [
     "Your request is so vague, even ChatGPT gave up on it.",
     "Bold of you to assume anyone read this.",
