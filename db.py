@@ -15,7 +15,7 @@ class User(Model):
     firstName = CharField()
     lastName = CharField()
     username = CharField(unique=True, max_length=50)
-    display_name = CharField(unique=True, max_length=30, default="")
+    display_name = CharField(max_length=30, default="")
     password_hash = CharField(max_length=255)
     verified = BooleanField(default=False)
     verification_code = CharField(max_length=10)
@@ -182,7 +182,7 @@ def init_db():
             db.execute_sql('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS last_seen TIMESTAMP DEFAULT NOW();')
             db.execute_sql('ALTER TABLE "group" ADD COLUMN IF NOT EXISTS group_type TEXT NOT NULL DEFAULT \'regular\';')
             db.execute_sql('ALTER TABLE "textmessage" ADD COLUMN IF NOT EXISTS message_type TEXT NOT NULL DEFAULT \'message\';')
-            db.execute_sql('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "display_name" VARCHAR(30) NOT NULL DEFAULT \'\' UNIQUE;')
+            db.execute_sql('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "display_name" VARCHAR(30) NOT NULL DEFAULT \'\';')
         except Exception:
             pass
         cutoff = datetime.now(timezone.utc).timestamp() - 86400
@@ -224,7 +224,7 @@ def run_migrations():
         db.execute_sql('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS custom_status TEXT NOT NULL DEFAULT \'\';')
         db.execute_sql('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS last_seen TIMESTAMP DEFAULT NOW();')
         db.execute_sql('ALTER TABLE "group" ADD COLUMN IF NOT EXISTS group_type TEXT NOT NULL DEFAULT \'regular\';')
-        db.execute_sql('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "display_name" VARCHAR(30) NOT NULL DEFAULT \'\' UNIQUE;')
+        db.execute_sql('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "display_name" VARCHAR(30) NOT NULL DEFAULT \'\';')
         db.execute_sql('ALTER TABLE "textmessage" ADD COLUMN IF NOT EXISTS message_type TEXT NOT NULL DEFAULT \'message\';')
     except Exception:
         pass

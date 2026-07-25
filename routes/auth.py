@@ -55,6 +55,9 @@ def handleSignUp():
                     return {"status": "error", "message": "Invite link has reached its 10-person limit."}, 400
                 starting_coins = 20
 
+            if User.get_or_none(User.display_name == display_name):
+                return {"status": "error", "message": "Username is already taken."}, 400
+
             User.create(
                 username=email,
                 display_name=display_name,
