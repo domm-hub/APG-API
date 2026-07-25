@@ -30,7 +30,7 @@ def createGroup():
 
     join_group(user, group)
 
-    return {"status": "success", "message": f"Group '{group_name}' created successfully."}, 201
+    return {"status": "success", "message": f"Group '{group_name}' created successfully.", "group_id": group.id, "code": group.code}, 201
 
 
 @chat_bp.route("/api/chat/listGroups", methods=["GET"])
@@ -46,7 +46,9 @@ def listGroups():
         "id": group.id,
         "name": group.name,
         "description": group.description,
-        "creator": group.creator.username,
+        "public": group.public,
+        "code": group.code,
+        "creator": (group.creator.firstName + ' ' + group.creator.lastName).strip() or group.creator.username,
         "created_at": group.created_at.isoformat(),
     } for group in groups]), 200
 
@@ -163,6 +165,51 @@ def getGroupCode():
         return error, code
 
     data = request.get_json()
+    group_id = data.get("group_id") if data else None
+    if not group_id:
+        return {"status": "error", "message": "Missing group_id."}, 400
+
+    try:
+        group = Group.get_by_id(group_id)
+    except DoesNotExist:
+        return {"status": "error", "message": "Group not found."}, 404
+
+    is_member = GroupMember.select().where(
+        (GroupMember.group == group) & (GroupMember.user == user)
+    ).exists()
+    if not is_member:
+        return {"status": "error", "message": "You are not a member of this group."}, 403
+
+    return {
+        "status": "success",
+        "code": group.code,
+        "link": f"https://apg-two.vercel.app/home.html#chat?join={group.code}"
+    }, 200
+
+
+@chat_bp.route("/api/chat/joinByCode", methods=["POST"])
+def joinByCode():
+    user, error, code = authenticated_user()
+    if error:
+        return error, code
+
+    data = request.get_json()
+    invite_code = data.get("code") if data else None
+    if not invite_code:
+        return {"status": "error", "message": "Missing invite code."}, 400
+
+    group = Group.get_or_none(Group.code == invite_code)
+    if not group:
+        return {"status": "error", "message": "Invalid invite code."}, 404
+
+    is_member = GroupMember.select().where(
+        (GroupMember.group == group) & (GroupMember.user == user)
+    ).exists()
+    if is_member:
+        return {"status": "success", "message": "You are already a member.", "group_id": group.id, "group_name": group.name}, 200
+
+    join_group(user, group)
+    return {"status": "success", "message": f"Joined '{group.name}'!", "group_id": group.id, "group_name": group.name}, 200
 
 
 @chat_bp.route("/api/chat/sendmessage", methods=["POST"])
@@ -192,11 +239,12 @@ def send_message():
         return {"status": "error", "message": "You are not a member of this group."}, 403
 
     msg = TextMessage.create(group=group, sender=user, content=message)
+    display_name = (user.firstName + ' ' + user.lastName).strip() or user.username
     return {
         "status": "success",
         "message": {
             "id": msg.id,
-            "sender": user.username,
+            "sender": display_name,
             "content": msg.content,
             "sent_at": msg.sent_at.isoformat()
         }
@@ -236,7 +284,7 @@ def get_messages():
         "status": "success",
         "messages": [{
             "id": msg.id,
-            "sender": msg.sender.username,
+            "sender": (msg.sender.firstName + ' ' + msg.sender.lastName).strip() or msg.sender.username,
             "content": msg.content,
             "sent_at": msg.sent_at.isoformat()
         } for msg in reversed(list(messages))]
