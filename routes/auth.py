@@ -169,6 +169,7 @@ def check_session():
         return {
             "status": "authenticated",
             "user": {
+                "id": user.id,
                 "email": user.username,
                 "firstName": user.firstName,
                 "lastName": user.lastName,
@@ -176,6 +177,8 @@ def check_session():
                 "is_admin": user.is_admin,
                 "coins": None if user.is_admin else user.coins,
                 "coins_infinite": user.is_admin,
+                "custom_status": user.custom_status or "",
+                "username": user.username,
             }
         }, 200
     except User.DoesNotExist:

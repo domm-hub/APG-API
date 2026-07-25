@@ -22,12 +22,14 @@ from routes.chat import chat_bp
 from routes.admin import admin_bp
 from routes.user import user_bp
 from routes.requests import requests_bp
+from routes.dm import dm_bp
 
 app.register_blueprint(auth_bp)
 app.register_blueprint(chat_bp)
 app.register_blueprint(admin_bp)
 app.register_blueprint(user_bp)
 app.register_blueprint(requests_bp)
+app.register_blueprint(dm_bp)
 
 from roasts import ROASTS
 
