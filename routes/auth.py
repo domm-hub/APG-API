@@ -185,14 +185,14 @@ def check_session():
         "user": {
             "id": user.id,
             "email": user.username,
-            "username": uname or user.username,
+                "username": getattr(user, 'display_name', '') or user.username,
             "firstName": user.firstName,
             "lastName": user.lastName,
             "verified": user.verified,
             "is_admin": user.is_admin,
             "coins": None if user.is_admin else user.coins,
             "coins_infinite": user.is_admin,
-            "custom_status": cstatus,
+            "custom_status": getattr(user, 'custom_status', ''),
         }
     }, 200
 
