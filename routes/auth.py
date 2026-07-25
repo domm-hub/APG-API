@@ -177,23 +177,24 @@ def check_session():
 
     try:
         user = User.get(User.username == email)
-        return {
-            "status": "authenticated",
-            "user": {
-                "id": user.id,
-                "email": user.username,
-                "username": user.display_name,
-                "firstName": user.firstName,
-                "lastName": user.lastName,
-                "verified": user.verified,
-                "is_admin": user.is_admin,
-                "coins": None if user.is_admin else user.coins,
-                "coins_infinite": user.is_admin,
-                "custom_status": getattr(user, 'custom_status', ''),
-            }
-        }, 200
-    except User.DoesNotExist:
+    except Exception:
         return {"status": "unauthenticated", "message": "User not found."}, 401
+
+    return {
+        "status": "authenticated",
+        "user": {
+            "id": user.id,
+            "email": user.username,
+            "username": uname or user.username,
+            "firstName": user.firstName,
+            "lastName": user.lastName,
+            "verified": user.verified,
+            "is_admin": user.is_admin,
+            "coins": None if user.is_admin else user.coins,
+            "coins_infinite": user.is_admin,
+            "custom_status": cstatus,
+        }
+    }, 200
 
 
 @auth_bp.route("/api/logout", methods=["POST"])

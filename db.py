@@ -198,33 +198,26 @@ def init_db():
 def run_migrations():
     if not db:
         return
-    try:
-        db.execute_sql('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT false;')
+    stmts = [
+        'ALTER TABLE "user" ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT false;',
+        'ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "firstName" VARCHAR(255) NOT NULL DEFAULT \'\';',
+        'ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "lastName" VARCHAR(255) NOT NULL DEFAULT \'\';',
+        'ALTER TABLE "requestmodel" ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT \'pending\';',
+        'ALTER TABLE "requestmodel" ADD COLUMN IF NOT EXISTS creator_id INTEGER REFERENCES "user"(id);',
+        'ALTER TABLE "requestmodel" ADD COLUMN IF NOT EXISTS type VARCHAR(20) NOT NULL DEFAULT \'request\';',
+        'ALTER TABLE "user" ADD COLUMN IF NOT EXISTS resend_count INTEGER NOT NULL DEFAULT 0;',
+        'ALTER TABLE "user" ADD COLUMN IF NOT EXISTS coins INTEGER NOT NULL DEFAULT 0;',
+        'ALTER TABLE "invite" ADD COLUMN IF NOT EXISTS uses INTEGER NOT NULL DEFAULT 0;',
+        'ALTER TABLE "invite" ADD COLUMN IF NOT EXISTS max_uses INTEGER NOT NULL DEFAULT 10;',
+        'ALTER TABLE "user" ADD COLUMN IF NOT EXISTS custom_status TEXT NOT NULL DEFAULT \'\';',
+        'ALTER TABLE "user" ADD COLUMN IF NOT EXISTS last_seen TIMESTAMP DEFAULT NOW();',
+        'ALTER TABLE "group" ADD COLUMN IF NOT EXISTS group_type TEXT NOT NULL DEFAULT \'regular\';',
+        'ALTER TABLE "textmessage" ADD COLUMN IF NOT EXISTS message_type TEXT NOT NULL DEFAULT \'message\';',
+        'ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "display_name" VARCHAR(30) NOT NULL DEFAULT \'\';',
+        'ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "phone" VARCHAR(50) NOT NULL DEFAULT \'\';',
+    ]
+    for sql in stmts:
         try:
-            db.execute_sql('ALTER TABLE "user" RENAME COLUMN "firstname" TO "firstName";')
+            db.execute_sql(sql)
         except Exception:
-            try:
-                db.execute_sql('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "firstName" VARCHAR(255) NOT NULL DEFAULT \'\';')
-            except Exception:
-                pass
-        try:
-            db.execute_sql('ALTER TABLE "user" RENAME COLUMN "lastname" TO "lastName";')
-        except Exception:
-            try:
-                db.execute_sql('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "lastName" VARCHAR(255) NOT NULL DEFAULT \'\';')
-            except Exception:
-                pass
-        db.execute_sql('ALTER TABLE "requestmodel" ADD COLUMN IF NOT EXISTS status VARCHAR(20) NOT NULL DEFAULT \'pending\';')
-        db.execute_sql('ALTER TABLE "requestmodel" ADD COLUMN IF NOT EXISTS creator_id INTEGER REFERENCES "user"(id);')
-        db.execute_sql('ALTER TABLE "requestmodel" ADD COLUMN IF NOT EXISTS type VARCHAR(20) NOT NULL DEFAULT \'request\';')
-        db.execute_sql('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS resend_count INTEGER NOT NULL DEFAULT 0;')
-        db.execute_sql('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS coins INTEGER NOT NULL DEFAULT 0;')
-        db.execute_sql('ALTER TABLE "invite" ADD COLUMN IF NOT EXISTS uses INTEGER NOT NULL DEFAULT 0;')
-        db.execute_sql('ALTER TABLE "invite" ADD COLUMN IF NOT EXISTS max_uses INTEGER NOT NULL DEFAULT 10;')
-        db.execute_sql('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS custom_status TEXT NOT NULL DEFAULT \'\';')
-        db.execute_sql('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS last_seen TIMESTAMP DEFAULT NOW();')
-        db.execute_sql('ALTER TABLE "group" ADD COLUMN IF NOT EXISTS group_type TEXT NOT NULL DEFAULT \'regular\';')
-        db.execute_sql('ALTER TABLE "user" ADD COLUMN IF NOT EXISTS "display_name" VARCHAR(30) NOT NULL DEFAULT \'\';')
-        db.execute_sql('ALTER TABLE "textmessage" ADD COLUMN IF NOT EXISTS message_type TEXT NOT NULL DEFAULT \'message\';')
-    except Exception:
-        pass
+            pass
