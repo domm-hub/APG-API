@@ -24,10 +24,17 @@ def handleSignUp():
     firstName = data.get("firstname")
     lastName = data.get("lastname")
     phoneNumber = data.get("phonenumber")
+    display_name = (data.get("display_name") or "").strip()
     invite_code = (data.get("invite_code") or "").strip()
 
     if not email or not password or not firstName or not lastName or not phoneNumber:
         return {"status": "error", "message": "Missing fields."}, 400
+
+    if not display_name or len(display_name) < 3 or len(display_name) > 30:
+        return {"status": "error", "message": "Username must be 3-30 characters."}, 400
+
+    if not display_name.replace("_", "").replace("-", "").isalnum():
+        return {"status": "error", "message": "Username can only contain letters, numbers, underscores, and hyphens."}, 400
 
     if len(firstName) > 255 or len(lastName) > 255:
         return {"status": "error", "message": "Firstname or last name too long."}, 400
@@ -50,6 +57,7 @@ def handleSignUp():
 
             User.create(
                 username=email,
+                display_name=display_name,
                 password_hash=hashed_password,
                 verified=False,
                 verification_code=code,
@@ -67,7 +75,7 @@ def handleSignUp():
             "invite_reward": bool(invite_code),
         }, 200
     except IntegrityError:
-        return {"status": "error", "message": "Email is already taken"}, 400
+        return {"status": "error", "message": "Email or username is already taken."}, 400
 
 
 @auth_bp.route("/api/verify", methods=["POST"])
@@ -171,6 +179,7 @@ def check_session():
             "user": {
                 "id": user.id,
                 "email": user.username,
+                "username": user.display_name,
                 "firstName": user.firstName,
                 "lastName": user.lastName,
                 "verified": user.verified,

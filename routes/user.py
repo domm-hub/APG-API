@@ -62,6 +62,13 @@ def update_profile():
         user.phone = data["phone"]
     if "custom_status" in data:
         user.custom_status = data["custom_status"]
+    if "display_name" in data:
+        new_dn = data["display_name"].strip()
+        if new_dn and len(new_dn) >= 3 and len(new_dn) <= 30:
+            existing = User.get_or_none(User.display_name == new_dn)
+            if existing and existing.id != user.id:
+                return {"status": "error", "message": "Username is already taken."}, 400
+            user.display_name = new_dn
 
     user.save()
 
@@ -70,6 +77,7 @@ def update_profile():
         "message": "Profile updated.",
         "user": {
             "email": user.username,
+            "username": user.display_name,
             "firstName": user.firstName,
             "lastName": user.lastName,
             "phone": getattr(user, 'phone', None),
@@ -181,7 +189,7 @@ def user_online():
     username = data.get("username") if data else None
     if not username:
         return {"status": "error", "message": "Missing username."}, 400
-    u = User.get_or_none(User.username == username)
+    u = User.get_or_none(User.display_name == username)
     if not u:
         return {"status": "error", "message": "User not found."}, 404
     return {

@@ -37,6 +37,7 @@ def list_conversations():
             "other_user": {
                 "id": other.id,
                 "name": ((other.firstName or '') + ' ' + (other.lastName or '')).strip() or other.username,
+                "username": other.display_name,
                 "custom_status": other.custom_status or "",
                 "last_seen": other.last_seen.isoformat() if other.last_seen else None,
             },
@@ -67,7 +68,7 @@ def get_or_create_conversation():
         if other_id:
             other = User.get_by_id(other_id)
         else:
-            other = User.get(User.username == other_username)
+            other = User.get(User.display_name == other_username)
     except DoesNotExist:
         return {"status": "error", "message": "User not found."}, 404
 
@@ -84,6 +85,7 @@ def get_or_create_conversation():
             "other_user": {
                 "id": other.id,
                 "name": ((other.firstName or '') + ' ' + (other.lastName or '')).strip() or other.username,
+                "username": other.display_name,
             }
         }
     }, 200
@@ -121,6 +123,7 @@ def get_dm_messages():
             "id": m.id,
             "sender_id": sender.id,
             "sender": ((sender.firstName or '') + ' ' + (sender.lastName or '')).strip() or sender.username,
+            "username": sender.display_name,
             "content": m.content,
             "sent_at": m.sent_at.isoformat(),
             "read": m.read,
@@ -160,6 +163,7 @@ def send_dm():
             "id": msg.id,
             "sender_id": user.id,
             "sender": ((user.firstName or '') + ' ' + (user.lastName or '')).strip() or user.username,
+            "username": user.display_name,
             "content": msg.content,
             "sent_at": msg.sent_at.isoformat(),
             "read": False,

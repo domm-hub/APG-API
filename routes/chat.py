@@ -42,7 +42,7 @@ def typing():
         if gid == str(group_id) and uid != str(user.id) and now - ts <= 4:
             try:
                 u = User.get_by_id(int(uid))
-                name = ((u.firstName or '') + ' ' + (u.lastName or '')).strip() or u.username
+                name = ((u.firstName or '') + ' ' + (u.lastName or '')).strip() or u.display_name
                 typers.append(name)
             except Exception:
                 pass
@@ -96,7 +96,7 @@ def listGroups():
         "public": group.public,
         "code": group.code,
         "group_type": group.group_type,
-        "creator": (group.creator.firstName + ' ' + group.creator.lastName).strip() or group.creator.username,
+        "creator": (group.creator.firstName + ' ' + group.creator.lastName).strip() or group.creator.display_name,
         "created_at": group.created_at.isoformat(),
     } for group in groups]), 200
 
@@ -130,17 +130,17 @@ def manage_group():
             return {"status": "error", "message": "Access denied to this private group."}, 403
 
         members_query = (User
-                         .select(User.id, User.username, User.firstName, User.lastName, User.custom_status, User.last_seen)
+                         .select(User.id, User.display_name, User.firstName, User.lastName, User.custom_status, User.last_seen)
                          .join(GroupMember)
                          .where(GroupMember.group == group))
 
         members_list = [
             {
                 "id": m.id,
-                "username": m.username,
+                "username": m.display_name,
                 "firstName": getattr(m, 'firstName', None),
                 "lastName": getattr(m, 'lastName', None),
-                "display_name": ((getattr(m, 'firstName', '') or '') + ' ' + (getattr(m, 'lastName', '') or '')).strip() or m.username,
+                "display_name": ((getattr(m, 'firstName', '') or '') + ' ' + (getattr(m, 'lastName', '') or '')).strip() or m.display_name,
                 "custom_status": getattr(m, 'custom_status', ''),
                 "last_seen": m.last_seen.isoformat() if m.last_seen else None,
             }
@@ -160,7 +160,7 @@ def manage_group():
                 "description": group.description,
                 "public": group.public,
                 "group_type": group.group_type,
-                "creator": group.creator.username,
+                "creator": group.creator.display_name,
                 "members": members_list,
                 "channels": channels,
             }
@@ -179,10 +179,10 @@ def manage_group():
                 target_username = data.get("add_user")
                 if target_username:
                     try:
-                        target_user = User.get(User.username == target_username)
+                        target_user = User.get(User.display_name == target_username)
                         member, created = GroupMember.get_or_create(group=group, user=target_user)
                         if created:
-                            joiner_name = ((target_user.firstName or '') + ' ' + (target_user.lastName or '')).strip() or target_user.username
+                            joiner_name = ((target_user.firstName or '') + ' ' + (target_user.lastName or '')).strip() or target_user.display_name
                             TextMessage.create(group=group, sender=target_user, content=f"{joiner_name} joined the group", message_type="join")
                     except DoesNotExist:
                         return {"status": "error", "message": f"User '{target_username}' not found."}, 404
@@ -271,7 +271,7 @@ def joinByCode():
         return {"status": "success", "message": "You are already a member.", "group_id": group.id, "group_name": group.name}, 200
 
     join_group(user, group)
-    display_name = (user.firstName + ' ' + user.lastName).strip() or user.username
+    display_name = (user.firstName + ' ' + user.lastName).strip() or user.display_name
     TextMessage.create(group=group, sender=user, content=f"{display_name} joined the group", message_type="join")
     return {"status": "success", "message": f"Joined '{group.name}'!", "group_id": group.id, "group_name": group.name}, 200
 
@@ -303,13 +303,13 @@ def send_message():
         return {"status": "error", "message": "You are not a member of this group."}, 403
 
     msg = TextMessage.create(group=group, sender=user, content=message)
-    display_name = (user.firstName + ' ' + user.lastName).strip() or user.username
+    display_name = (user.firstName + ' ' + user.lastName).strip() or user.display_name
     return {
         "status": "success",
         "message": {
             "id": msg.id,
             "sender": display_name,
-            "username": user.username,
+            "username": user.display_name,
             "content": msg.content,
             "message_type": msg.message_type,
             "sent_at": msg.sent_at.isoformat()
@@ -361,8 +361,8 @@ def get_messages():
         "status": "success",
         "messages": [{
             "id": msg.id,
-            "sender": (msg.sender.firstName + ' ' + msg.sender.lastName).strip() or msg.sender.username,
-            "username": msg.sender.username,
+            "sender": (msg.sender.firstName + ' ' + msg.sender.lastName).strip() or msg.sender.display_name,
+            "username": msg.sender.display_name,
             "content": msg.content,
             "message_type": msg.message_type,
             "sent_at": msg.sent_at.isoformat(),
@@ -480,8 +480,8 @@ def channel_messages():
             "status": "success",
             "messages": [{
                 "id": m.id,
-                "sender": ((m.sender.firstName or '') + ' ' + (m.sender.lastName or '')).strip() or m.sender.username,
-                "username": m.sender.username,
+                "sender": ((m.sender.firstName or '') + ' ' + (m.sender.lastName or '')).strip() or m.sender.display_name,
+                "username": m.sender.display_name,
                 "content": m.content,
                 "sent_at": m.sent_at.isoformat(),
             } for m in reversed(list(msgs))]
@@ -507,13 +507,13 @@ def channel_messages():
         return {"status": "error", "message": "Not a member."}, 403
 
     msg = ChannelMessage.create(channel=ch, sender=user, content=content)
-    display_name = (user.firstName + ' ' + user.lastName).strip() or user.username
+    display_name = (user.firstName + ' ' + user.lastName).strip() or user.display_name
     return {
         "status": "success",
         "message": {
             "id": msg.id,
             "sender": display_name,
-            "username": user.username,
+            "username": user.display_name,
             "content": msg.content,
             "sent_at": msg.sent_at.isoformat()
         }
