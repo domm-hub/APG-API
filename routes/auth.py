@@ -189,8 +189,7 @@ def check_session():
                 "is_admin": user.is_admin,
                 "coins": None if user.is_admin else user.coins,
                 "coins_infinite": user.is_admin,
-                "custom_status": user.custom_status or "",
-                "username": user.username,
+                "custom_status": getattr(user, 'custom_status', ''),
             }
         }, 200
     except User.DoesNotExist:
