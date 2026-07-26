@@ -33,6 +33,7 @@ def admin_users():
         "id": u.id,
         "firstName": u.firstName,
         "lastName": u.lastName,
+        "username": getattr(u, 'display_name', ''),
         "verified": u.verified,
         "is_admin": u.is_admin,
         "coins": None if u.is_admin else u.coins,
